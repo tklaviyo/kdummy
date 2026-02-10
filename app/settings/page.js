@@ -1,0 +1,389 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
+import Link from 'next/link'
+import Navigation from '@/components/Navigation'
+import { getAccounts, saveAccount, deleteAccount, getActiveApiKey, setActiveApiKey } from '@/lib/storage'
+import { useConfirm } from '@/context/ConfirmContext'
+
+const SETTINGS_TABS = ['accounts', 'data']
+
+export default function SettingsPage() {
+  const searchParams = useSearchParams()
+  const { alert, confirm } = useConfirm()
+  const [activeTab, setActiveTab] = useState('accounts')
+  const [accounts, setAccounts] = useState([])
+  const [activeApiKey, setActiveApiKeyState] = useState(null)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [formData, setFormData] = useState({
+    accountName: '',
+    apiKey: ''
+  })
+  const [editingKey, setEditingKey] = useState(null)
+
+  useEffect(() => {
+    loadAccounts()
+  }, [])
+
+  useEffect(() => {
+    const tab = searchParams.get('tab')
+    if (tab && SETTINGS_TABS.includes(tab)) setActiveTab(tab)
+  }, [searchParams])
+
+  const loadAccounts = () => {
+    const accountsList = getAccounts()
+    setAccounts(accountsList)
+    const active = getActiveApiKey()
+    setActiveApiKeyState(active)
+  }
+
+  const handleAddAccount = async () => {
+    if (!formData.accountName.trim() || !formData.apiKey.trim()) {
+      await alert('Please enter both account name and API key')
+      return
+    }
+
+    // Check if API key already exists
+    const existing = accounts.find(a => a.apiKey === formData.apiKey)
+    if (existing) {
+      await alert('This API key already exists')
+      return
+    }
+
+    const account = {
+      accountName: formData.accountName.trim(),
+      apiKey: formData.apiKey.trim(),
+      createdAt: new Date().toISOString()
+    }
+
+    saveAccount(account)
+    loadAccounts()
+    setFormData({ accountName: '', apiKey: '' })
+    setShowAddForm(false)
+  }
+
+  const handleEditAccount = (account) => {
+    setEditingKey(account.apiKey)
+    setFormData({
+      accountName: account.accountName,
+      apiKey: account.apiKey
+    })
+    setShowAddForm(true)
+  }
+
+  const handleUpdateAccount = async () => {
+    if (!formData.accountName.trim() || !formData.apiKey.trim()) {
+      await alert('Please enter both account name and API key')
+      return
+    }
+
+    // If API key changed, check if new one exists
+    if (formData.apiKey !== editingKey) {
+      const existing = accounts.find(a => a.apiKey === formData.apiKey && a.apiKey !== editingKey)
+      if (existing) {
+        await alert('This API key already exists')
+        return
+      }
+    }
+
+    // Delete old account if API key changed
+    if (formData.apiKey !== editingKey) {
+      deleteAccount(editingKey)
+    }
+
+    const account = {
+      accountName: formData.accountName.trim(),
+      apiKey: formData.apiKey.trim(),
+      createdAt: accounts.find(a => a.apiKey === editingKey)?.createdAt || new Date().toISOString()
+    }
+
+    saveAccount(account)
+    
+    // Update active key if it was the one being edited
+    if (activeApiKey === editingKey && formData.apiKey !== editingKey) {
+      setActiveApiKey(formData.apiKey)
+    }
+    
+    loadAccounts()
+    setFormData({ accountName: '', apiKey: '' })
+    setShowAddForm(false)
+    setEditingKey(null)
+  }
+
+  const handleDeleteAccount = async (apiKey) => {
+    const ok = await confirm('Are you sure you want to delete this account? All data associated with this API key will be permanently deleted.', { confirmLabel: 'Delete', danger: true })
+    if (!ok) return
+    deleteAccount(apiKey)
+    loadAccounts()
+  }
+
+  const handleSetActive = (apiKey) => {
+    setActiveApiKey(apiKey)
+    setActiveApiKeyState(apiKey)
+  }
+
+  const handleCancel = () => {
+    setFormData({ accountName: '', apiKey: '' })
+    setShowAddForm(false)
+    setEditingKey(null)
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Navigation activePage="settings" />
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="bg-white shadow rounded-lg">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+            <p className="mt-1 text-sm text-gray-500">
+              Manage your Klaviyo accounts and API keys. Each account's data is stored separately.
+            </p>
+          </div>
+
+          <div className="p-6">
+            {/* Tabs */}
+            <div className="border-b border-gray-200 mb-6">
+              <nav className="-mb-px flex space-x-8">
+                <button
+                  onClick={() => setActiveTab('accounts')}
+                  className={`${
+                    activeTab === 'accounts'
+                      ? 'border-indigo-500 text-indigo-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                >
+                  Klaviyo Accounts
+                </button>
+                <button
+                  onClick={() => setActiveTab('data')}
+                  className={`${
+                    activeTab === 'data'
+                      ? 'border-indigo-500 text-indigo-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                >
+                  Data Storage Information
+                </button>
+              </nav>
+            </div>
+
+            {/* Tab Content */}
+            {activeTab === 'accounts' && (
+              <>
+                {!showAddForm ? (
+                  <>
+                    <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-lg font-semibold text-gray-900">Klaviyo Accounts</h2>
+                  <button
+                    onClick={() => setShowAddForm(true)}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    Add Account
+                  </button>
+                </div>
+
+                {accounts.length === 0 ? (
+                  <div className="text-center py-12">
+                    <p className="text-gray-500 mb-4">No accounts configured</p>
+                    <button
+                      onClick={() => setShowAddForm(true)}
+                      className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+                    >
+                      Add Your First Account
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {accounts.map((account) => (
+                      <div
+                        key={account.apiKey}
+                        className={`border rounded-lg p-4 ${
+                          activeApiKey === account.apiKey
+                            ? 'border-indigo-500 bg-indigo-50'
+                            : 'border-gray-200 bg-white'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <h3 className="text-lg font-semibold text-gray-900">
+                                {account.accountName}
+                              </h3>
+                              {activeApiKey === account.apiKey && (
+                                <span className="px-2 py-1 text-xs font-medium bg-indigo-600 text-white rounded">
+                                  Active
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-600 font-mono mb-2">
+                              {account.apiKey}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              Added: {new Date(account.createdAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {activeApiKey !== account.apiKey && (
+                              <button
+                                onClick={() => handleSetActive(account.apiKey)}
+                                className="px-3 py-1 text-sm text-indigo-600 hover:text-indigo-700 border border-indigo-600 rounded-md hover:bg-indigo-50"
+                              >
+                                Set Active
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleEditAccount(account)}
+                              className="px-3 py-1 text-sm text-gray-700 hover:text-gray-900 border border-gray-300 rounded-md hover:bg-gray-50"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteAccount(account.apiKey)}
+                              className="px-3 py-1 text-sm text-red-600 hover:text-red-700 border border-red-300 rounded-md hover:bg-red-50"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                </>
+              ) : (
+                <div className="max-w-md">
+                  <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                    {editingKey ? 'Edit Account' : 'Add New Account'}
+                  </h2>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Account Name
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.accountName}
+                        onChange={(e) => setFormData({ ...formData, accountName: e.target.value })}
+                        placeholder="e.g., Production, Staging, Demo"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Public API Key
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.apiKey}
+                        onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
+                        placeholder="pk_..."
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                        disabled={!!editingKey}
+                      />
+                      {editingKey && (
+                        <p className="mt-1 text-xs text-gray-500">
+                          API key cannot be changed. Delete and recreate to change it.
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={editingKey ? handleUpdateAccount : handleAddAccount}
+                        className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        {editingKey ? 'Update' : 'Add'} Account
+                      </button>
+                      <button
+                        onClick={handleCancel}
+                        className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                )}
+              </>
+            )}
+
+            {activeTab === 'data' && (
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <h2 className="text-lg font-semibold text-gray-900 mb-3">Data Storage Information</h2>
+                <div className="space-y-4 text-sm text-gray-700">
+                  <div>
+                    <p className="font-medium mb-2">How Data is Stored:</p>
+                    <p className="mb-2">
+                      All data (profiles, events, configurations, etc.) is stored in your browser's <strong>localStorage</strong>. 
+                      Each Klaviyo account (identified by its API key) has its own separate data storage, ensuring complete data isolation between accounts.
+                    </p>
+                    <p>
+                      Data is stored with the following naming convention:
+                    </p>
+                    <ul className="list-disc list-inside ml-4 mt-2 space-y-1">
+                      <li><code className="bg-gray-100 px-1 py-0.5 rounded">kdummy_active_api_key</code> - Stores the currently active API key</li>
+                      <li><code className="bg-gray-100 px-1 py-0.5 rounded">kdummy_accounts</code> - Stores all account configurations</li>
+                      <li><code className="bg-gray-100 px-1 py-0.5 rounded">kdummy_account_&#123;apiKey&#125;</code> - Single key containing all data for an account (nested object with: profiles, events, subscriptions, profile_properties_defaults, profile_properties_custom, data_catalog)</li>
+                    </ul>
+                    <p className="mt-2 text-xs text-gray-600">
+                      Each account has one localStorage key containing a nested JSON object with all its data. This makes it easy to view, export, or delete all data for an account at once.
+                    </p>
+                  </div>
+                  
+                  <div>
+                    <p className="font-medium mb-2">How to Find Data in localStorage:</p>
+                    <ol className="list-decimal list-inside ml-4 space-y-1">
+                      <li>Open your browser's Developer Tools (F12 or Right-click → Inspect)</li>
+                      <li>Go to the <strong>Application</strong> tab (Chrome/Edge) or <strong>Storage</strong> tab (Firefox)</li>
+                      <li>In the left sidebar, expand <strong>Local Storage</strong></li>
+                      <li>Click on your website's domain (e.g., <code className="bg-gray-100 px-1 py-0.5 rounded">http://localhost:3000</code>)</li>
+                      <li>You'll see all keys starting with <code className="bg-gray-100 px-1 py-0.5 rounded">kdummy_</code></li>
+                      <li>Click on any key to view its value in JSON format</li>
+                    </ol>
+                  </div>
+
+                  <div>
+                    <p className="font-medium mb-2">How to Delete Data Manually:</p>
+                    <div className="space-y-2">
+                      <p><strong>Delete all data for a specific account:</strong></p>
+                      <ol className="list-decimal list-inside ml-4 space-y-1">
+                        <li>Follow steps 1-4 above to open localStorage</li>
+                        <li>Find the key <code className="bg-gray-100 px-1 py-0.5 rounded">kdummy_account_&#123;yourApiKey&#125;</code> (API key will have special characters replaced with underscores)</li>
+                        <li>Right-click the key and select <strong>Delete</strong>, or select it and press Delete</li>
+                      </ol>
+                      <p className="mt-2"><strong>Delete all K:Dummy data:</strong></p>
+                      <ol className="list-decimal list-inside ml-4 space-y-1">
+                        <li>Open localStorage as described above</li>
+                        <li>Select all keys starting with <code className="bg-gray-100 px-1 py-0.5 rounded">kdummy_</code></li>
+                        <li>Right-click and select <strong>Delete</strong>, or press Delete key</li>
+                      </ol>
+                      <p className="mt-2 text-xs text-gray-600">
+                        <strong>Note:</strong> You can also use the "Delete" button on an account in the Klaviyo Accounts tab, which will automatically remove all associated data.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="font-medium mb-2">Using Browser Console (Advanced):</p>
+                    <p className="mb-2">You can also access localStorage programmatically in the browser console:</p>
+                    <div className="bg-gray-800 text-gray-100 p-3 rounded font-mono text-xs overflow-x-auto">
+                      <div className="mb-2">// View all K:Dummy keys</div>
+                      <div className="mb-2">Object.keys(localStorage).filter(k =&gt; k.startsWith('kdummy_'))</div>
+                      <div className="mb-2 mt-4">// View all data for a specific API key</div>
+                      <div className="mb-2">localStorage.getItem('kdummy_account_&#123;apiKey&#125;')</div>
+                      <div className="mb-2 mt-4">// View specific data type (e.g., profiles)</div>
+                      <div className="mb-2">JSON.parse(localStorage.getItem('kdummy_account_&#123;apiKey&#125;')).profiles</div>
+                      <div className="mb-2 mt-4">// Delete all data for an API key</div>
+                      <div>localStorage.removeItem('kdummy_account_&#123;apiKey&#125;')</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
