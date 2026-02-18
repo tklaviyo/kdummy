@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Navigation from '@/components/Navigation'
@@ -19,6 +19,8 @@ export default function ProfilesPage() {
   const [loading, setLoading] = useState(false)
   const [selectedProfile, setSelectedProfile] = useState(null)
   const [propertiesCount, setPropertiesCount] = useState(0)
+  const [selectedProfileIds, setSelectedProfileIds] = useState(new Set())
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     if (tab === 'list') {
@@ -61,15 +63,64 @@ export default function ProfilesPage() {
     }
   }
 
+  const deleteProfilesByIds = useCallback(async (ids) => {
+    if (ids.length === 0) return
+    setDeleting(true)
+    try {
+      const res = await fetchWithApiKey('/api/profiles', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+      if (res.ok) {
+        setProfiles((prev) => prev.filter((p) => !ids.includes(p.id)))
+        setSelectedProfileIds((prev) => {
+          const next = new Set(prev)
+          ids.forEach((id) => next.delete(id))
+          return next
+        })
+        if (selectedProfile && ids.includes(selectedProfile.id)) setSelectedProfile(null)
+        await alert(`Deleted ${ids.length} profile(s).`)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        await alert(data?.errors?.[0]?.detail || 'Failed to delete profiles.')
+      }
+    } catch (e) {
+      await alert(e?.message || 'Failed to delete profiles.')
+    } finally {
+      setDeleting(false)
+    }
+  }, [selectedProfile, alert])
+
   const handleDelete = async (profileId) => {
     const ok = await confirm('Are you sure you want to delete this profile?', { confirmLabel: 'Delete', danger: true })
     if (!ok) return
-
-    // Note: In a real implementation, you'd call DELETE /api/profiles/:id
-    // For now, we'll just refresh
-    fetchProfiles()
-    await alert('Profile deleted (mock - in real implementation would call API)')
+    await deleteProfilesByIds([profileId])
   }
+
+  const handleBulkDelete = async () => {
+    const ids = Array.from(selectedProfileIds)
+    if (ids.length === 0) return
+    const ok = await confirm(`Delete ${ids.length} selected profile(s)?`, { confirmLabel: 'Delete', danger: true })
+    if (!ok) return
+    await deleteProfilesByIds(ids)
+  }
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedProfileIds((prev) => {
+      if (prev.size === profiles.length) return new Set()
+      return new Set(profiles.map((p) => p.id))
+    })
+  }, [profiles.length])
+
+  const toggleSelectProfile = useCallback((profileId) => {
+    setSelectedProfileIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(profileId)) next.delete(profileId)
+      else next.add(profileId)
+      return next
+    })
+  }, [])
 
   const handleViewDetails = (profile) => {
     setSelectedProfile(profile)
@@ -137,10 +188,30 @@ export default function ProfilesPage() {
 
               {/* Profiles List */}
               <div className="bg-white shadow rounded-lg overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-200">
+                <div className="px-6 py-4 border-b border-gray-200 flex flex-wrap items-center justify-between gap-3">
                   <h3 className="text-lg font-semibold text-gray-900">
                     Profiles ({profiles.length})
                   </h3>
+                  {selectedProfileIds.size > 0 && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-gray-500">{selectedProfileIds.size} selected</span>
+                      <button
+                        type="button"
+                        onClick={handleBulkDelete}
+                        disabled={deleting}
+                        className="inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {deleting ? 'Deleting…' : 'Delete selected'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedProfileIds(new Set())}
+                        className="text-sm font-medium text-gray-600 hover:text-gray-900"
+                      >
+                        Clear selection
+                      </button>
+                    </div>
+                  )}
                 </div>
                 
                 {loading ? (
@@ -166,7 +237,15 @@ export default function ProfilesPage() {
                     <table className="min-w-full divide-y divide-gray-200">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                          <th className="px-4 py-3 text-left w-10">
+                            <input
+                              type="checkbox"
+                              checked={profiles.length > 0 && selectedProfileIds.size === profiles.length}
+                              onChange={toggleSelectAll}
+                              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                              aria-label="Select all profiles"
+                            />
+                          </th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phone</th>
@@ -177,8 +256,14 @@ export default function ProfilesPage() {
                       <tbody className="bg-white divide-y divide-gray-200">
                         {profiles.map((profile) => (
                           <tr key={profile.id} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
-                              {profile.id.substring(0, 12)}...
+                            <td className="px-4 py-4 whitespace-nowrap w-10">
+                              <input
+                                type="checkbox"
+                                checked={selectedProfileIds.has(profile.id)}
+                                onChange={() => toggleSelectProfile(profile.id)}
+                                className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                aria-label={`Select ${profile.attributes?.email || profile.id}`}
+                              />
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                               {profile.attributes.first_name} {profile.attributes.last_name}

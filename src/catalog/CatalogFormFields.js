@@ -7,8 +7,10 @@ import { getTemplate } from './schema.js'
 import { getVisibleFields } from './validators.js'
 import { getVariantPreview } from './generators.js'
 
-export function CatalogFormFields({ templateKey, formValues, setFormValues, errors = [] }) {
-  const visibleFields = getVisibleFields(templateKey, formValues)
+export function CatalogFormFields({ templateKey, formValues, setFormValues, errors = [], skipFieldKeys = [] }) {
+  const visibleFields = getVisibleFields(templateKey, formValues).filter(
+    (f) => !skipFieldKeys.includes(f.key)
+  )
   const errorByField = {}
   errors.forEach((e) => {
     errorByField[e.field] = e.message

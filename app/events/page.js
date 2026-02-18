@@ -682,13 +682,13 @@ export default function EventsPage() {
               </div>
               <div className="p-6 space-y-6">
                 {journey && (needsProducts || needsServices || needsSubscriptions) && (
-                  <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.5fr] gap-6">
-                    {/* Left: data source + template */}
-                    <div className="space-y-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Left: data source + template (1/2) */}
+                    <div className="space-y-6 min-w-0">
                     <div>
                       <h3 className="text-sm font-semibold text-gray-900 mb-1">Where should item data come from?</h3>
                       <p className="text-xs text-gray-500 mb-3">Generated events will reference items from one of these sources.</p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <button
                           type="button"
                           onClick={() => {
@@ -742,8 +742,8 @@ export default function EventsPage() {
                     )}
                     </div>
 
-                    {/* Right: item selection table — Item name, Item type, Industry */}
-                    <div>
+                    {/* Right: item selection table (1/2) */}
+                    <div className="min-w-0">
                       <h3 className="text-sm font-semibold text-gray-900 mb-1">Which items to include?</h3>
                       <p className="text-xs text-gray-500 mb-2">Select the items that can appear in generated events. At least one must be selected.</p>
                       <div className="rounded-lg border border-gray-200 bg-white overflow-hidden flex flex-col min-h-[260px]">
@@ -818,38 +818,6 @@ export default function EventsPage() {
                           })()}
                         </div>
                       </div>
-                      {/* Products per order: controls how many items per order and how many Viewed/Added to Cart events per product */}
-                      {needsProducts && journey && (
-                        <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-4 mt-4">
-                          <h3 className="text-sm font-semibold text-gray-900 mb-1">Products per order</h3>
-                          <p className="text-xs text-gray-500 mb-3">Each order will have between min–max line items. There will be one Viewed Product and one Added to Cart event per product in the order.</p>
-                          <div className="flex flex-wrap items-center gap-4">
-                            <label className="flex items-center gap-2">
-                              <span className="text-sm text-gray-700">Min</span>
-                              <input
-                                type="number"
-                                min={1}
-                                max={10}
-                                value={productsPerOrderMin}
-                                onChange={(e) => setProductsPerOrderMin(Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)))}
-                                className="w-16 rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-                              />
-                            </label>
-                            <label className="flex items-center gap-2">
-                              <span className="text-sm text-gray-700">Max</span>
-                              <input
-                                type="number"
-                                min={1}
-                                max={10}
-                                value={productsPerOrderMax}
-                                onChange={(e) => setProductsPerOrderMax(Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)))}
-                                className="w-16 rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-                              />
-                            </label>
-                            <span className="text-xs text-gray-500">items per order</span>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   </div>
                 )}
@@ -866,163 +834,227 @@ export default function EventsPage() {
                   <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white text-sm font-bold mr-3">3</span>
                   Generation settings
                 </h2>
-                <p className="text-sm text-gray-500 mt-1 ml-11">Journeys per profile, timestamp range, and profile assignment.</p>
+                <p className="text-sm text-gray-500 mt-1 ml-11">Journeys per profile, timestamp range, and product options.</p>
               </div>
               <div className="p-6">
-                <div className="grid grid-cols-1 lg:grid-cols-[1fr_3fr] gap-6">
-                  {/* 1/4: Journey runs + Timestamp range stacked */}
-                  <div className="space-y-4">
-                    <div className="rounded-lg border border-gray-200 bg-gray-50/30 p-4">
-                      <label htmlFor="journeyCount" className="block text-sm font-semibold text-gray-900 mb-2">Journeys per profile</label>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setJourneyCount((c) => Math.max(1, c - 1))}
-                          className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:ring-2 focus:ring-indigo-500"
-                          aria-label="Decrease journeys per profile"
-                        >
-                          −
-                        </button>
-                        <input
-                          id="journeyCount"
-                          type="number"
-                          min={1}
-                          max={10}
-                          value={journeyCount}
-                          onChange={(e) => setJourneyCount(Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)))}
-                          className="w-16 rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm font-medium text-gray-900 shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-center"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setJourneyCount((c) => Math.min(10, c + 1))}
-                          className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:ring-2 focus:ring-indigo-500"
-                          aria-label="Increase journeys per profile"
-                        >
-                          +
-                        </button>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-2">How many journey runs per profile (1–10)</p>
-                    </div>
-                    <div className="rounded-lg border border-gray-200 bg-gray-50/30 p-4">
-                      <label htmlFor="dateRange" className="block text-sm font-semibold text-gray-900 mb-2">Timestamp range</label>
-                      <select
-                        id="dateRange"
-                        value={dateRange}
-                        onChange={(e) => setDateRange(e.target.value)}
-                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm font-medium text-gray-900 shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                <div className={`grid gap-4 grid-cols-1 sm:grid-cols-3`}>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50/30 p-4">
+                    <label htmlFor="journeyCount" className="block text-sm font-semibold text-gray-900 mb-2">Journeys per profile</label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setJourneyCount((c) => Math.max(1, c - 1))}
+                        className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:ring-2 focus:ring-indigo-500"
+                        aria-label="Decrease journeys per profile"
                       >
-                        {DATE_RANGE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
-                      <p className="text-xs text-gray-500 mt-2">When generated events will be dated</p>
+                        −
+                      </button>
+                      <input
+                        id="journeyCount"
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={journeyCount}
+                        onChange={(e) => setJourneyCount(Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)))}
+                        className="w-16 rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm font-medium text-gray-900 shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-center"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setJourneyCount((c) => Math.min(10, c + 1))}
+                        className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:ring-2 focus:ring-indigo-500"
+                        aria-label="Increase journeys per profile"
+                      >
+                        +
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">How many journey runs per profile (1–10)</p>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50/30 p-4">
+                    <label htmlFor="dateRange" className="block text-sm font-semibold text-gray-900 mb-2">Timestamp range</label>
+                    <select
+                      id="dateRange"
+                      value={dateRange}
+                      onChange={(e) => setDateRange(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm font-medium text-gray-900 shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    >
+                      {DATE_RANGE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                    <p className="text-xs text-gray-500 mt-2">When generated events will be dated</p>
+                  </div>
+                  {needsProducts && journey && (
+                    <div className="rounded-lg border border-gray-200 bg-gray-50/30 p-4">
+                      <span className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Product run options</span>
+                      <label className="block text-sm font-semibold text-gray-900 mb-2">Products per order</label>
+                      <p className="text-xs text-gray-500 mb-3">Min–max line items per order. One Viewed Product and one Added to Cart event per product.</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-600 w-7">Min</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={10}
+                            value={productsPerOrderMin}
+                            onChange={(e) => setProductsPerOrderMin(Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)))}
+                            className="w-14 rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-center"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-600 w-7">Max</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={10}
+                            value={productsPerOrderMax}
+                            onChange={(e) => setProductsPerOrderMax(Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)))}
+                            className="w-14 rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-center"
+                          />
+                        </div>
+                        <span className="text-xs text-gray-500">items per order</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Step 4: Profile assignment — own section */}
+            <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+              <div className="bg-gradient-to-r from-indigo-50 to-white px-6 py-4 border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-900">
+                  <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white text-sm font-bold mr-3">4</span>
+                  Profile assignment
+                </h2>
+                <p className="text-sm text-gray-500 mt-1 ml-11">Choose who the generated events will be attributed to.</p>
+              </div>
+              <div className="p-6">
+                <div className="w-full max-w-full md:max-w-[50%] min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 mb-1">Profile source</p>
+                  <p className="text-xs text-gray-500 mb-4">Generate random profiles for this run or select existing profiles from your Klaviyo account.</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                  <button
+                    type="button"
+                    onClick={() => { setProfileMode('auto'); setSelectedProfileIds([]) }}
+                    className={`rounded-xl border-2 p-4 text-left transition-colors ${
+                      profileMode === 'auto' ? 'border-indigo-500 bg-indigo-50/50 shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className="block text-sm font-semibold text-gray-900">Generate random profiles</span>
+                    <p className="text-xs text-gray-500 mt-1">Create N simulated profiles for this run. Events are attributed to these profiles (not created in your account).</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setProfileMode('selected')}
+                    className={`rounded-xl border-2 p-4 text-left transition-colors ${
+                      profileMode === 'selected' ? 'border-indigo-500 bg-indigo-50/50 shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className="block text-sm font-semibold text-gray-900">Use existing profiles</span>
+                    <p className="text-xs text-gray-500 mt-1">Select profiles from your Klaviyo account. Generated events will be assigned to the profiles you choose.</p>
+                  </button>
+                </div>
+
+                {profileMode === 'auto' && (
+                  <div className="rounded-lg border border-gray-200 bg-white p-4 w-full">
+                    <label className="block text-sm font-semibold text-gray-900 mb-2">Number of profiles</label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setProfilesCount((c) => Math.max(1, c - 1))}
+                        className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                        aria-label="Decrease number of profiles"
+                      >
+                        −
+                      </button>
+                      <input
+                        type="number"
+                        min={1}
+                        max={50}
+                        value={profilesCount}
+                        onChange={(e) => setProfilesCount(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                        className="w-16 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-center focus:ring-2 focus:ring-indigo-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setProfilesCount((c) => Math.min(50, c + 1))}
+                        className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                        aria-label="Increase number of profiles"
+                      >
+                        +
+                      </button>
+                      <span className="text-sm text-gray-500">profiles for this run</span>
                     </div>
                   </div>
-                  {/* 3/4: Profile assignment — fixed-height scrollable multi-select with search */}
-                  <div className="rounded-lg border border-gray-200 bg-gray-50/30 p-4 min-w-0">
-                    <span className="block text-sm font-semibold text-gray-900 mb-3">Profile assignment</span>
-                    <div className="flex flex-col gap-4">
-                      <label className="flex items-start gap-3 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="profileMode"
-                          checked={profileMode === 'auto'}
-                          onChange={() => { setProfileMode('auto'); setSelectedProfileIds([]) }}
-                          className="mt-1 h-4 w-4 rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <div>
-                          <span className="text-sm font-medium text-gray-900">Random profiles</span>
-                          <p className="text-xs text-gray-500 mt-0.5">Generate this many random profiles for this run</p>
-                          {profileMode === 'auto' && (
-                            <div className="mt-2 flex items-center gap-2">
-                              <input
-                                type="number"
-                                min={1}
-                                max={50}
-                                value={profilesCount}
-                                onChange={(e) => setProfilesCount(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                                className="w-20 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm"
-                              />
-                              <span className="text-xs text-gray-500">profiles</span>
-                            </div>
-                          )}
-                        </div>
-                      </label>
-                      <label className="flex items-start gap-3 cursor-pointer flex-1 min-w-0">
-                        <input
-                          type="radio"
-                          name="profileMode"
-                          checked={profileMode === 'selected'}
-                          onChange={() => setProfileMode('selected')}
-                          className="mt-1 h-4 w-4 rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500 shrink-0"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <span className="text-sm font-medium text-gray-900">Select profiles</span>
-                          <p className="text-xs text-gray-500 mt-0.5">Search and choose profiles from your account</p>
-                          {profileMode === 'selected' && (
-                            <div className="mt-3 rounded-lg border border-gray-200 bg-white overflow-hidden flex flex-col min-h-[260px]" ref={profileDropdownRef}>
-                              {!getActiveApiKey() && <p className="px-4 py-2 text-xs text-amber-600 border-b border-gray-100">Set your API key in Settings to load profiles.</p>}
-                              {availableProfiles.length === 0 && !profilesLoadError && getActiveApiKey() && (
-                                <div className="p-4 border-b border-gray-100">
-                                  <button type="button" onClick={loadProfiles} className="text-sm font-medium text-indigo-600 hover:text-indigo-800">Load profiles</button>
-                                </div>
-                              )}
-                              {profilesLoadError && <p className="px-4 py-2 text-xs text-amber-600 border-b border-gray-100">{profilesLoadError}</p>}
-                              {availableProfiles.length > 0 && (
-                                <>
-                                  <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2 bg-gray-50/50 shrink-0">
-                                    <span className="text-xs text-gray-600">{selectedProfileIds.length} of {availableProfiles.length} selected</span>
-                                    <div className="flex gap-2">
-                                      <button type="button" onClick={() => setSelectedProfileIds(availableProfiles.map((p) => p.id))} className="text-xs font-medium text-indigo-600 hover:text-indigo-800">Select all</button>
-                                      <span className="text-gray-300">|</span>
-                                      <button type="button" onClick={() => setSelectedProfileIds([])} className="text-xs font-medium text-indigo-600 hover:text-indigo-800">Deselect all</button>
-                                    </div>
-                                  </div>
-                                  <div className="p-2 border-b border-gray-100 shrink-0">
-                                    <input
-                                      type="search"
-                                      placeholder="Search by email or ID…"
-                                      value={profileSearchQuery}
-                                      onChange={(e) => setProfileSearchQuery(e.target.value)}
-                                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                                    />
-                                  </div>
-                                  <ul className="py-1 overflow-y-auto flex-1 min-h-0" style={{ maxHeight: '260px' }}>
-                                    {(() => {
-                                      const q = (profileSearchQuery || '').trim().toLowerCase()
-                                      const filtered = q
-                                        ? availableProfiles.filter((p) => {
-                                            const email = (p.attributes?.email || '').toLowerCase()
-                                            const id = (p.id || '').toLowerCase()
-                                            const first = (p.attributes?.first_name || '').toLowerCase()
-                                            const last = (p.attributes?.last_name || '').toLowerCase()
-                                            return email.includes(q) || id.includes(q) || first.includes(q) || last.includes(q)
-                                          })
-                                        : availableProfiles
-                                      if (filtered.length === 0) {
-                                        return <li className="px-4 py-4 text-sm text-gray-500 text-center">{q ? 'No profiles match your search.' : 'No profiles.'}</li>
-                                      }
-                                      return filtered.map((p) => (
-                                        <li key={p.id}>
-                                          <label className="flex items-center gap-2 px-4 py-2 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0">
-                                            <input
-                                              type="checkbox"
-                                              checked={selectedProfileIds.includes(p.id)}
-                                              onChange={() => setSelectedProfileIds((prev) => prev.includes(p.id) ? prev.filter((id) => id !== p.id) : [...prev, p.id])}
-                                              className="rounded border-gray-300 text-indigo-600 shrink-0"
-                                            />
-                                            <span className="text-sm truncate">{p.attributes?.email || p.id}</span>
-                                          </label>
-                                        </li>
-                                      ))
-                                    })()}
-                                  </ul>
-                                </>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </label>
+                )}
+
+                {profileMode === 'selected' && (
+                  <div className="rounded-lg border border-gray-200 bg-white overflow-hidden flex flex-col min-h-[260px]" ref={profileDropdownRef}>
+                    <div className="px-4 py-3 border-b border-gray-200 bg-gray-50/50 shrink-0">
+                      <p className="text-sm font-semibold text-gray-900">
+                        {selectedProfileIds.length === 0
+                          ? 'No profiles selected'
+                          : `${selectedProfileIds.length} profile${selectedProfileIds.length !== 1 ? 's' : ''} selected for this run`}
+                      </p>
                     </div>
+                    {!getActiveApiKey() && <p className="px-4 py-2 text-xs text-amber-600 border-b border-gray-100">Set your API key in Settings to load profiles.</p>}
+                    {availableProfiles.length === 0 && !profilesLoadError && getActiveApiKey() && (
+                      <div className="p-4 border-b border-gray-100">
+                        <button type="button" onClick={loadProfiles} className="text-sm font-medium text-indigo-600 hover:text-indigo-800">Load profiles from account</button>
+                      </div>
+                    )}
+                    {profilesLoadError && <p className="px-4 py-2 text-xs text-amber-600 border-b border-gray-100">{profilesLoadError}</p>}
+                    {availableProfiles.length > 0 && (
+                      <>
+                        <div className="p-2 border-b border-gray-100 shrink-0">
+                          <input
+                            type="search"
+                            placeholder="Search by email, name, or ID…"
+                            value={profileSearchQuery}
+                            onChange={(e) => setProfileSearchQuery(e.target.value)}
+                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                          />
+                        </div>
+                        <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between gap-2 shrink-0">
+                          <span className="text-xs text-gray-600">{selectedProfileIds.length} of {availableProfiles.length} selected</span>
+                          <div className="flex gap-2">
+                            <button type="button" onClick={() => setSelectedProfileIds(availableProfiles.map((p) => p.id))} className="text-xs font-medium text-indigo-600 hover:text-indigo-800">Select all</button>
+                            <span className="text-gray-300">|</span>
+                            <button type="button" onClick={() => setSelectedProfileIds([])} className="text-xs font-medium text-indigo-600 hover:text-indigo-800">Deselect all</button>
+                          </div>
+                        </div>
+                        <ul className="py-1 overflow-y-auto flex-1 min-h-0" style={{ maxHeight: '240px' }}>
+                          {(() => {
+                            const q = (profileSearchQuery || '').trim().toLowerCase()
+                            const filtered = q
+                              ? availableProfiles.filter((p) => {
+                                  const email = (p.attributes?.email || '').toLowerCase()
+                                  const id = (p.id || '').toLowerCase()
+                                  const first = (p.attributes?.first_name || '').toLowerCase()
+                                  const last = (p.attributes?.last_name || '').toLowerCase()
+                                  return email.includes(q) || id.includes(q) || first.includes(q) || last.includes(q)
+                                })
+                              : availableProfiles
+                            if (filtered.length === 0) {
+                              return <li className="px-4 py-4 text-sm text-gray-500 text-center">{q ? 'No profiles match your search.' : 'No profiles.'}</li>
+                            }
+                            return filtered.map((p) => (
+                              <li key={p.id}>
+                                <label className="flex items-center gap-2 px-4 py-2 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedProfileIds.includes(p.id)}
+                                    onChange={() => setSelectedProfileIds((prev) => prev.includes(p.id) ? prev.filter((id) => id !== p.id) : [...prev, p.id])}
+                                    className="rounded border-gray-300 text-indigo-600 shrink-0"
+                                  />
+                                  <span className="text-sm truncate">{p.attributes?.email || p.id}</span>
+                                </label>
+                              </li>
+                            ))
+                          })()}
+                        </ul>
+                      </>
+                    )}
                   </div>
+                )}
                 </div>
               </div>
             </div>

@@ -14,10 +14,17 @@ import { useConfirm } from '@/context/ConfirmContext'
 
 const TEMPLATE_KEYS = ['product', 'service', 'subscription']
 
+const CATALOG_TYPE_DESCRIPTIONS = {
+  product: 'Physical or digital goods you sell (e.g. apparel, electronics, downloads).',
+  service: 'Bookable or deliverable services (e.g. appointments, classes, consultations).',
+  subscription: 'Recurring plans (e.g. monthly boxes, memberships, software licenses).',
+}
+
 export function CreateCatalogModal({ open, onClose, onSuccess }) {
   const { confirm } = useConfirm()
   const [step, setStep] = useState(0)
   const [templateKey, setTemplateKey] = useState('')
+  const [templateSearchQuery, setTemplateSearchQuery] = useState('')
   const [selectedBusinessType, setSelectedBusinessType] = useState(null)
   const [itemForms, setItemForms] = useState([])
   const [currentItemIndex, setCurrentItemIndex] = useState(0)
@@ -128,6 +135,7 @@ export function CreateCatalogModal({ open, onClose, onSuccess }) {
   const handleClose = () => {
     setStep(0)
     setTemplateKey('')
+    setTemplateSearchQuery('')
     setSelectedBusinessType(null)
     setItemForms([])
     setCurrentItemIndex(0)
@@ -139,11 +147,20 @@ export function CreateCatalogModal({ open, onClose, onSuccess }) {
     if (!open) return
     setStep(0)
     setTemplateKey('')
+    setTemplateSearchQuery('')
     setSelectedBusinessType(null)
     setItemForms([])
     setCurrentItemIndex(0)
     setErrors([])
   }, [open])
+
+  const filteredBusinessTypes = templateKey
+    ? businessTypes.filter((bt) => {
+        const q = (templateSearchQuery || '').trim().toLowerCase()
+        if (!q) return true
+        return (bt.label || '').toLowerCase().includes(q)
+      })
+    : []
 
   if (!open) return null
 
@@ -175,49 +192,12 @@ export function CreateCatalogModal({ open, onClose, onSuccess }) {
           </button>
         </div>
 
-        <nav className="px-6 py-2 border-b border-gray-100 flex items-center gap-0 shrink-0" aria-label="Wizard steps">
-          {stepLabels.map((label, i) => {
-            const isActive = i === step
-            const isPast = i < step
-            const allowed = canGoToStep(i)
-            return (
-              <div key={i} className="flex items-center">
-                <button
-                  type="button"
-                  onClick={() => goToStep(i)}
-                  disabled={!allowed}
-                  className={`group flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-all text-sm ${
-                    !allowed
-                      ? 'cursor-not-allowed bg-gray-100 text-gray-400 border border-gray-200'
-                      : isActive
-                        ? 'bg-indigo-600 text-white shadow-md cursor-pointer'
-                        : isPast
-                          ? 'bg-white text-indigo-600 hover:bg-indigo-50 border border-indigo-200 cursor-pointer'
-                          : 'bg-white/80 text-gray-500 hover:bg-white hover:text-gray-700 border border-gray-200 cursor-pointer'
-                  }`}
-                  aria-current={isActive ? 'step' : undefined}
-                >
-                  <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
-                    !allowed ? 'bg-gray-200 text-gray-400' : isActive ? 'bg-white/20' : isPast ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-400'
-                  }`}>
-                    {isPast ? '✓' : i + 1}
-                  </span>
-                  <span className="hidden sm:inline">{label}</span>
-                </button>
-                {i < stepLabels.length - 1 && (
-                  <div className={`w-6 h-0.5 mx-0.5 rounded ${i < step ? 'bg-indigo-300' : 'bg-gray-200'}`} aria-hidden="true" />
-                )}
-              </div>
-            )
-          })}
-        </nav>
-
         <div className="px-6 py-4 overflow-y-auto flex-1 min-h-0">
           {step === 0 && (
-            <div className="grid gap-6 lg:grid-cols-2">
+            <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Catalog item type</label>
-                <div className="flex flex-wrap gap-2">
+                <label className="block text-sm font-medium text-gray-700 mb-3">Catalog item type</label>
+                <div className="grid grid-cols-3 gap-4">
                   {TEMPLATE_KEYS.map((key) => {
                     const template = getTemplate(key)
                     const selected = templateKey === key
@@ -229,44 +209,65 @@ export function CreateCatalogModal({ open, onClose, onSuccess }) {
                           if (key !== templateKey) {
                             setTemplateKey(key)
                             setSelectedBusinessType(null)
+                            setTemplateSearchQuery('')
                           }
                         }}
-                        className={`px-3 py-2 rounded-md border text-sm font-medium transition-colors ${
+                        className={`rounded-xl border-2 p-5 text-left transition-colors ${
                           selected
-                            ? 'border-indigo-500 bg-indigo-50 text-indigo-800'
-                            : 'border-gray-300 bg-white text-gray-700 hover:border-indigo-300 hover:bg-gray-50'
+                            ? 'border-indigo-500 bg-indigo-50 text-indigo-800 shadow-sm'
+                            : 'border-gray-200 bg-white text-gray-700 hover:border-indigo-300 hover:bg-gray-50'
                         }`}
                       >
-                        {template.label}
+                        <span className="block text-sm font-semibold">{template.label}</span>
+                        <span className="block text-xs text-gray-500 mt-1.5 font-normal">{CATALOG_TYPE_DESCRIPTIONS[key]}</span>
                       </button>
                     )
                   })}
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Template</label>
+              <div className="border-t border-gray-100 pt-6">
+                <label className="block text-sm font-medium text-gray-700 mb-3">Template</label>
                 {templateKey ? (
                   <>
-                    <select
-                      value={selectedBusinessType ? selectedBusinessType.id : ''}
-                      onChange={(e) => {
-                        const id = e.target.value
-                        const bt = businessTypes.find((b) => b.id === id) || null
-                        setSelectedBusinessType(bt)
-                      }}
-                      className="w-full max-w-sm px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-white"
-                    >
-                      <option value="">Select a template…</option>
-                      {businessTypes.map((bt) => (
-                        <option key={bt.id} value={bt.id}>{bt.label} ({getMaxTemplatesForBusinessType(bt)} items)</option>
-                      ))}
-                    </select>
-                    <p className="mt-1 text-xs text-gray-500">
-                      Generates {selectedBusinessType ? maxForSelected : '—'} items. Edit in Configure.
+                    <div className="mb-3 max-w-md">
+                      <input
+                        type="search"
+                        placeholder="Search templates…"
+                        value={templateSearchQuery}
+                        onChange={(e) => setTemplateSearchQuery(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                      {filteredBusinessTypes.map((bt) => {
+                        const selected = selectedBusinessType?.id === bt.id
+                        const maxItems = getMaxTemplatesForBusinessType(bt)
+                        return (
+                          <button
+                            key={bt.id}
+                            type="button"
+                            onClick={() => setSelectedBusinessType(selected ? null : bt)}
+                            className={`rounded-xl border-2 p-4 text-left transition-colors ${
+                              selected
+                                ? 'border-indigo-500 bg-indigo-50 text-indigo-800 shadow-sm'
+                                : 'border-gray-200 bg-white text-gray-700 hover:border-indigo-300 hover:bg-gray-50'
+                            }`}
+                          >
+                            <span className="block text-sm font-semibold truncate" title={bt.label}>{bt.label}</span>
+                            <span className="block text-xs text-gray-500 mt-1">{maxItems} items</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {filteredBusinessTypes.length === 0 && (
+                      <p className="mt-2 text-sm text-gray-500">No templates match your search.</p>
+                    )}
+                    <p className="mt-3 text-xs text-gray-500">
+                      {selectedBusinessType ? `Generates ${maxForSelected} items. Edit in the next step.` : 'Select a template above.'}
                     </p>
                   </>
                 ) : (
-                  <p className="text-sm text-gray-500">Select an item type first.</p>
+                  <p className="text-sm text-gray-500">Select an item type above first.</p>
                 )}
               </div>
             </div>
@@ -287,7 +288,6 @@ export function CreateCatalogModal({ open, onClose, onSuccess }) {
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         {templateKey === 'subscription' ? 'Plan' : 'Price'}
                       </th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -297,7 +297,6 @@ export function CreateCatalogModal({ open, onClose, onSuccess }) {
                         <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">{item.name ?? '—'}</td>
                         <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{getTemplate(templateKey).label}</td>
                         <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">{summaryPriceOrPlan(item)}</td>
-                        <td className="px-4 py-2 whitespace-nowrap text-sm font-mono text-gray-600">{item.id ?? '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -307,8 +306,8 @@ export function CreateCatalogModal({ open, onClose, onSuccess }) {
           )}
 
           {step === 1 && itemForms.length > 0 && currentFormValues && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="md:col-span-1 border border-gray-200 rounded-lg bg-gray-50 overflow-hidden">
+            <div className="grid grid-cols-1 md:grid-cols-[2fr_3fr] gap-6">
+              <div className="border border-gray-200 rounded-lg bg-gray-50 overflow-hidden min-w-0">
                 <div className="px-3 py-2.5 border-b border-gray-200 bg-white">
                   <div className="text-sm font-semibold text-gray-800">
                     {getTemplate(templateKey).label} ({itemForms.length})
@@ -387,7 +386,7 @@ export function CreateCatalogModal({ open, onClose, onSuccess }) {
                   </button>
                 </div>
               </div>
-              <div className="md:col-span-2 min-w-0">
+              <div className="min-w-0">
                 <div className="text-sm text-gray-600 mb-3">
                   <span className="font-medium text-gray-700">Editing:</span>{' '}
                   {currentFormValues.name && String(currentFormValues.name).trim() ? currentFormValues.name : `Item ${currentItemIndex + 1}`}
@@ -402,6 +401,7 @@ export function CreateCatalogModal({ open, onClose, onSuccess }) {
                   formValues={currentFormValues}
                   setFormValues={updateCurrentItem}
                   errors={errors}
+                  skipFieldKeys={['id']}
                 />
               </div>
             </div>

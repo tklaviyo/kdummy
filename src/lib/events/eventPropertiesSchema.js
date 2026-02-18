@@ -329,11 +329,13 @@ function flattenOptionsToProperties(item, properties) {
 
 /**
  * Build one item object with full product/variant data for Klaviyo (email loops).
+ * Option-derived fields (size, color, etc.) are for catalog/UI only—omit from order payloads when includeOptions is false.
  * @param {object} product - Catalog product { id, name, price, currency, url, imageUrl, categories, brand, options, sku }
  * @param {number} [quantity=1]
+ * @param {boolean} [includeOptions=false] - If false, do not add option-derived keys (use for order/checkout event payloads)
  * @returns {object}
  */
-function buildKlaviyoItemFromProduct(product, quantity = 1) {
+function buildKlaviyoItemFromProduct(product, quantity = 1, includeOptions = false) {
   if (!product) return {}
   const item = {
     product_id: product.id,
@@ -347,7 +349,7 @@ function buildKlaviyoItemFromProduct(product, quantity = 1) {
     categories: Array.isArray(product.categories) ? product.categories : (product.categories ? [product.categories] : []),
     brand: product.brand ?? '',
   }
-  if (product?.options && Array.isArray(product.options)) {
+  if (includeOptions && product?.options && Array.isArray(product.options)) {
     for (const opt of product.options) {
       const key = toSnakeCase(opt.name)
       if (key && opt.values?.length) item[key] = opt.values[0]
@@ -410,9 +412,10 @@ function buildKlaviyoItemFromSubscription(sub, quantity = 1) {
  * @param {object} catalog - { products, services, subscriptions }
  * @param {number} maxItems - max items to include (e.g. 3 for preview)
  * @param {'product'|'service'|'subscription'} [catalogKind] - which catalog type to use; inferred from catalog if omitted
+ * @param {boolean} [includeOptions=false] - if true, add option-derived keys to product items (catalog/UI); use false for order payloads
  * @returns {object[]}
  */
-export function buildItemsArrayFromCatalog(catalog, maxItems = 3, catalogKind) {
+export function buildItemsArrayFromCatalog(catalog, maxItems = 3, catalogKind, includeOptions = false) {
   const kind = catalogKind || (
     (catalog?.products?.length && 'product') ||
     (catalog?.services?.length && 'service') ||
@@ -434,7 +437,7 @@ export function buildItemsArrayFromCatalog(catalog, maxItems = 3, catalogKind) {
   if (chosen.length === 0) {
     return [{ product_id: 'prod_sample', product_name: 'Sample Product', product_url: '', sku: 'prod_sample', image_url: '', price: 29.99, quantity: 1, currency: 'USD', categories: [], brand: '' }]
   }
-  return chosen.map((p) => buildKlaviyoItemFromProduct(p, 1))
+  return chosen.map((p) => buildKlaviyoItemFromProduct(p, 1, includeOptions))
 }
 
 const mergeByKey = (arr1, arr2) => {
@@ -521,39 +524,41 @@ export function buildSampleEventProperties(eventName, catalog, context = {}) {
     }
   }
   const effectiveItemKind = itemKind || schema.catalogItemType
+  const orderLevelEvents = ['Started Checkout', 'Placed Order', 'Fulfilled Order', 'Cancelled Order', 'Refunded Order']
+  const isOrderLevelEvent = orderLevelEvents.includes(eventName)
 
   const properties = { ...base }
 
-  if (effectiveItemKind === 'product' && item) {
-    properties.product_id = item.id
-    properties.product_name = item.name
-    properties.product_url = item.url ?? ''
-    properties.price = item.price
-    properties.currency = item.currency ?? 'USD'
-    if (item.categories?.length) properties.categories = item.categories
-    if (item.brand) properties.brand = item.brand
-    if (item.imageUrl) properties.image_url = item.imageUrl
+  if (!isOrderLevelEvent) {
+    if (effectiveItemKind === 'product' && item) {
+      properties.product_id = item.id
+      properties.product_name = item.name
+      properties.product_url = item.url ?? ''
+      properties.price = item.price
+      properties.currency = item.currency ?? 'USD'
+      if (item.categories?.length) properties.categories = item.categories
+      if (item.brand) properties.brand = item.brand
+      if (item.imageUrl) properties.image_url = item.imageUrl
+    }
+    if (effectiveItemKind === 'service' && item) {
+      properties.service_id = item.id
+      properties.service_name = item.name
+      properties.price = item.price ?? 0
+      properties.currency = item.currency ?? 'USD'
+      if (item.categories?.length) properties.categories = item.categories
+      if (item.durationMinutes != null) properties.duration_minutes = item.durationMinutes
+    }
+    if (effectiveItemKind === 'subscription' && item) {
+      properties.subscription_id = item.id
+      properties.subscription_name = item.name
+      properties.price = item.price
+      properties.currency = item.currency ?? 'USD'
+      properties.interval = item.interval ?? 'month'
+      if (item.intervalCount != null) properties.interval_count = item.intervalCount
+      if (item.categories?.length) properties.categories = item.categories
+    }
+    flattenOptionsToProperties(item, properties)
   }
-  if (effectiveItemKind === 'service' && item) {
-    properties.service_id = item.id
-    properties.service_name = item.name
-    properties.price = item.price ?? 0
-    properties.currency = item.currency ?? 'USD'
-    if (item.categories?.length) properties.categories = item.categories
-    if (item.durationMinutes != null) properties.duration_minutes = item.durationMinutes
-  }
-  if (effectiveItemKind === 'subscription' && item) {
-    properties.subscription_id = item.id
-    properties.subscription_name = item.name
-    properties.price = item.price
-    properties.currency = item.currency ?? 'USD'
-    properties.interval = item.interval ?? 'month'
-    if (item.intervalCount != null) properties.interval_count = item.intervalCount
-    if (item.categories?.length) properties.categories = item.categories
-  }
-
-  // Variant/options as top-level key-value (e.g. size, color) from item.options
-  flattenOptionsToProperties(item, properties)
 
   // Fill from merged catalogDriven (base + business-type) so industry-specific fields appear
   if (item && schema.catalogDriven?.length) {
@@ -599,7 +604,7 @@ export function buildSampleEventProperties(eventName, catalog, context = {}) {
   if (eventName === 'Added to Cart' && item) {
     properties.quantity = 1
   }
-  const itemsArray = buildItemsArrayFromCatalog(catalog, 3, context.catalogKind || effectiveItemKind)
+  const itemsArray = buildItemsArrayFromCatalog(catalog, 3, context.catalogKind || effectiveItemKind, isOrderLevelEvent ? false : undefined)
   const cartValue = itemsArray.reduce((sum, i) => sum + (i.price || 0) * (i.quantity || 1), 0)
 
   const orderLists = deriveOrderListsFromItems(itemsArray)

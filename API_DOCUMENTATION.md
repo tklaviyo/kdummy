@@ -65,8 +65,7 @@ Creates a new profile with identifiers, Klaviyo properties, location, and custom
         "birthday": "1990-05-15",
         "loyalty_member": true,
         "loyalty_points": 1250,
-        "_kdummy_generated": true,
-        "_kdummy_generated_at": "2024-01-15T10:30:00Z"
+        "kdummy_generated_at": "2024-01-15T10:30:00Z"
       },
       "created": "2024-01-15T10:30:00Z",
       "updated": "2024-01-15T10:30:00Z"
@@ -327,7 +326,7 @@ All endpoints return errors in the following format:
 
 - All data is stored in-memory and will be lost on server restart
 - Profile IDs, Event IDs, and Subscription IDs are auto-generated
-- All profiles created through this API are automatically tagged with `_kdummy_generated: true`
+- All profiles created through this API include `kdummy_generated_at` (ISO timestamp) in their properties
 - Metric names are automatically prefixed with "TEST " if not already present
 - All timestamps are in ISO 8601 format
 

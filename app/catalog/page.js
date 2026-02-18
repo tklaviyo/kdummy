@@ -1528,8 +1528,8 @@ function LocationCreateModal({
                 ))}
               </select>
             </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="md:col-span-1 border border-gray-200 rounded-lg bg-gray-50 overflow-hidden">
+          <div className="grid grid-cols-1 md:grid-cols-[2fr_3fr] gap-6">
+            <div className="border border-gray-200 rounded-lg bg-gray-50 overflow-hidden min-w-0">
               <div className="px-3 py-2.5 border-b border-gray-200 bg-white">
                 <div className="text-sm font-semibold text-gray-800">Locations ({locationItems.length})</div>
                 <p className="text-xs text-gray-500 mt-0.5">Click an item to edit on the right</p>
@@ -1585,7 +1585,7 @@ function LocationCreateModal({
                 </button>
               </div>
             </div>
-            <div className="md:col-span-2 min-w-0">
+            <div className="min-w-0">
               {currentLocation && (
                 <>
                   <div className="text-sm text-gray-600 mb-3">

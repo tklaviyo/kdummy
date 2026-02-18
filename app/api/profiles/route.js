@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getApiKeyFromRequest, appendApiKeyData } from '@/lib/serverStorage'
+import { getApiKeyFromRequest, appendApiKeyData, getApiKeyDataType, setApiKeyDataType } from '@/lib/serverStorage'
 
 // Generate a mock Klaviyo profile ID
 function generateProfileId() {
@@ -53,9 +53,7 @@ export async function POST(request) {
         location: attributes.location || null,
         properties: {
           ...attributes.properties,
-          // Mark as dummy profile from this app
-          _kdummy_generated: true,
-          _kdummy_generated_at: new Date().toISOString(),
+          kdummy_generated_at: new Date().toISOString(),
         },
         created: new Date().toISOString(),
         updated: new Date().toISOString(),
@@ -124,5 +122,41 @@ export async function GET(request) {
       },
     }
   )
+}
+
+export async function DELETE(request) {
+  const apiKey = getApiKeyFromRequest(request)
+  if (!apiKey) {
+    return NextResponse.json(
+      { errors: [{ detail: 'API key is required. Provide via x-api-key header or api_key query parameter.' }] },
+      { status: 400 }
+    )
+  }
+
+  try {
+    const body = await request.json().catch(() => ({}))
+    const ids = Array.isArray(body.ids) ? body.ids : body.id != null ? [body.id] : []
+    if (ids.length === 0) {
+      return NextResponse.json(
+        { errors: [{ detail: 'Request body must include ids (array) or id (string).' }] },
+        { status: 400 }
+      )
+    }
+
+    const idSet = new Set(ids.map((id) => String(id)))
+    const profiles = getApiKeyDataType(apiKey, 'profiles', [])
+    const filtered = profiles.filter((p) => !idSet.has(p.id))
+    setApiKeyDataType(apiKey, 'profiles', filtered)
+
+    return NextResponse.json(
+      { data: { deleted: ids.length, remaining: filtered.length } },
+      { headers: { 'Content-Type': 'application/vnd.api+json' } }
+    )
+  } catch (error) {
+    return NextResponse.json(
+      { errors: [{ detail: error.message || 'Internal server error' }] },
+      { status: 500 }
+    )
+  }
 }
 

@@ -20,14 +20,17 @@ export default function GenerateProfilesTab() {
   
   // Generation settings
   const [count, setCount] = useState(1)
+  const [emailDomain, setEmailDomain] = useState('klaviyo-demo.com')
+  const [percentWithoutName, setPercentWithoutName] = useState(0)
   const [includeEmail, setIncludeEmail] = useState(true)
   const [includePhone, setIncludePhone] = useState(false)
   const [includeExternalId, setIncludeExternalId] = useState(false)
+  const [customEmail, setCustomEmail] = useState('')
+  const [customPhone, setCustomPhone] = useState('')
+  const [customExternalId, setCustomExternalId] = useState('')
   const [includeName, setIncludeName] = useState(true)
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
-  const [firstNameEnabled, setFirstNameEnabled] = useState(true)
-  const [lastNameEnabled, setLastNameEnabled] = useState(true)
   const [selectedLocationId, setSelectedLocationId] = useState('')
   const [locationAddress, setLocationAddress] = useState('')
   const [locationCity, setLocationCity] = useState('')
@@ -334,7 +337,11 @@ export default function GenerateProfilesTab() {
     return properties
   }
 
-  const generateProfile = () => {
+  const generateProfile = (overrides = {}) => {
+    const includeNameForThis = overrides.includeNameOverride !== undefined ? overrides.includeNameOverride : includeName
+    const domain = overrides.emailDomain != null ? overrides.emailDomain : emailDomain
+    const usedEmails = overrides.usedEmails || null
+
     // Determine gender - check if it's set in custom properties, otherwise random
     let profileGender = null
     if (count === 1) {
@@ -348,20 +355,16 @@ export default function GenerateProfilesTab() {
     }
 
     let name = null
-    if (includeName) {
+    if (includeNameForThis) {
       if (count === 1) {
-        if (firstNameEnabled && firstName) {
+        if (firstName || lastName) {
           name = {
-            first: firstName,
-            last: lastNameEnabled && lastName ? lastName : null,
+            first: firstName || null,
+            last: lastName || null,
             gender: profileGender
           }
-        } else if (lastNameEnabled && lastName) {
-          name = {
-            first: null,
-            last: lastName,
-            gender: profileGender
-          }
+        } else {
+          name = getNameByGender(profileGender)
         }
       } else {
         if (Math.random() > 0.1) {
@@ -465,13 +468,22 @@ export default function GenerateProfilesTab() {
     }
 
     if (includeEmail) {
-      profile.attributes.email = generateEmail(name?.first || '', name?.last || '')
+      const custom = overrides.customEmail
+      profile.attributes.email = (custom !== undefined && custom !== null && String(custom).trim() !== '')
+        ? String(custom).trim()
+        : generateEmail(name?.first || '', name?.last || '', { domain: domain || 'klaviyo-demo.com', usedEmails })
     }
     if (includePhone) {
-      profile.attributes.phone_number = phoneNumber || generatePhoneNumber()
+      const custom = overrides.customPhone
+      profile.attributes.phone_number = (custom !== undefined && custom !== null && String(custom).trim() !== '')
+        ? String(custom).trim()
+        : (phoneNumber || generatePhoneNumber())
     }
     if (includeExternalId) {
-      profile.attributes.external_id = generateExternalId()
+      const custom = overrides.customExternalId
+      profile.attributes.external_id = (custom !== undefined && custom !== null && String(custom).trim() !== '')
+        ? String(custom).trim()
+        : generateExternalId()
     }
 
     return profile
@@ -494,10 +506,27 @@ export default function GenerateProfilesTab() {
     setGenerating(true)
     const createdProfiles = []
     const errors = []
+    const usedEmails = new Set()
+
+    const withoutNameCount = Math.floor(count * (percentWithoutName / 100))
+    const includeNameForProfile = Array.from({ length: count }, (_, i) => i >= withoutNameCount)
+    for (let i = includeNameForProfile.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [includeNameForProfile[i], includeNameForProfile[j]] = [includeNameForProfile[j], includeNameForProfile[i]]
+    }
 
     try {
       for (let i = 0; i < count; i++) {
-        const profileData = generateProfile()
+        const profileData = generateProfile({
+          includeNameOverride: includeNameForProfile[i],
+          emailDomain: emailDomain || 'klaviyo-demo.com',
+          usedEmails: includeEmail ? usedEmails : null,
+          ...(count === 1 && {
+            customEmail,
+            customPhone,
+            customExternalId,
+          }),
+        })
         
         try {
           const result = await fetchWithApiKey('/api/profiles', {
@@ -792,133 +821,138 @@ export default function GenerateProfilesTab() {
           </p>
         </div>
         <div className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 md:gap-8">
-            {/* Column 1: Identifiers (toggles) */}
-            <div className="space-y-3">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Identifiers</h3>
-              <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <Toggle checked={includeEmail} onChange={setIncludeEmail} />
-                  <span className="text-sm font-medium text-gray-700">Email</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Toggle checked={includePhone} onChange={setIncludePhone} />
-                  <span className="text-sm font-medium text-gray-700">Phone</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Toggle checked={includeExternalId} onChange={setIncludeExternalId} />
-                  <span className="text-sm font-medium text-gray-700">External ID</span>
-                </div>
+          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-8 gap-y-4">
+            {/* Header row */}
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Identifiers</h3>
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Consent</h3>
+
+            {/* Row 1: Email + Email marketing */}
+            <div className="flex items-start gap-3">
+              <div className="flex items-center gap-3 shrink-0">
+                <Toggle checked={includeEmail} onChange={setIncludeEmail} />
+                <span className="text-sm font-medium text-gray-700">Email</span>
               </div>
+              {count === 1 && includeEmail && (
+                <input
+                  type="email"
+                  value={customEmail}
+                  onChange={(e) => setCustomEmail(e.target.value)}
+                  placeholder="Email address (optional)"
+                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              )}
+            </div>
+            <div className="space-y-2">
+              <label
+                className={`flex items-center ${!includeEmail ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+              >
+                <input
+                  type="checkbox"
+                  disabled={!includeEmail}
+                  checked={subscribeChannels.includes('email_marketing')}
+                  onChange={(e) => {
+                    if (!includeEmail) return
+                    if (e.target.checked) setSubscribeChannels([...subscribeChannels, 'email_marketing'])
+                    else setSubscribeChannels(subscribeChannels.filter((c) => c !== 'email_marketing'))
+                  }}
+                  className="h-4 w-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                />
+                <span className="ml-2 text-sm text-gray-700">Email marketing</span>
+              </label>
             </div>
 
-            {/* Column 2: Email consent */}
-            <div className="space-y-3">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Email consent</h3>
-              <p className="text-xs text-gray-500">
-                {includeEmail
-                  ? 'Opt profiles into email marketing.'
-                  : 'Turn on Email identifier to enable.'}
-              </p>
-              <div className="space-y-2">
-                <label
-                  className={`flex items-center ${!includeEmail ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                >
-                  <input
-                    type="checkbox"
-                    disabled={!includeEmail}
-                    checked={subscribeChannels.includes('email_marketing')}
-                    onChange={(e) => {
-                      if (!includeEmail) return
-                      if (e.target.checked) setSubscribeChannels([...subscribeChannels, 'email_marketing'])
-                      else setSubscribeChannels(subscribeChannels.filter((c) => c !== 'email_marketing'))
-                    }}
-                    className="h-4 w-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
-                  />
-                  <span className="ml-2 text-sm text-gray-700">Email marketing</span>
-                </label>
+            {/* Row 2: Phone + SMS & WhatsApp consent */}
+            <div className="flex items-start gap-3">
+              <div className="flex items-center gap-3 shrink-0">
+                <Toggle checked={includePhone} onChange={setIncludePhone} />
+                <span className="text-sm font-medium text-gray-700">Phone</span>
               </div>
+              {count === 1 && includePhone && (
+                <input
+                  type="tel"
+                  value={customPhone}
+                  onChange={(e) => setCustomPhone(e.target.value)}
+                  placeholder="Phone number (optional)"
+                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              )}
+            </div>
+            <div className={`${!includePhone ? 'opacity-50' : ''} space-y-2`}>
+              <label className="flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  disabled={!includePhone}
+                  checked={subscribeChannels.includes('sms_marketing')}
+                  onChange={(e) => {
+                    if (!includePhone) return
+                    if (e.target.checked) setSubscribeChannels([...subscribeChannels, 'sms_marketing'])
+                    else setSubscribeChannels(subscribeChannels.filter((c) => c !== 'sms_marketing'))
+                  }}
+                  className="h-4 w-4 text-indigo-600 rounded border-gray-300"
+                />
+                <span className="ml-2 text-sm text-gray-700">SMS marketing</span>
+              </label>
+              <label className="flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  disabled={!includePhone}
+                  checked={subscribeChannels.includes('sms_transactional')}
+                  onChange={(e) => {
+                    if (!includePhone) return
+                    if (e.target.checked) setSubscribeChannels([...subscribeChannels, 'sms_transactional'])
+                    else setSubscribeChannels(subscribeChannels.filter((c) => c !== 'sms_transactional'))
+                  }}
+                  className="h-4 w-4 text-indigo-600 rounded border-gray-300"
+                />
+                <span className="ml-2 text-sm text-gray-700">SMS transactional</span>
+              </label>
+              <label className="flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  disabled={!includePhone}
+                  checked={subscribeChannels.includes('whatsapp_marketing')}
+                  onChange={(e) => {
+                    if (!includePhone) return
+                    if (e.target.checked) setSubscribeChannels([...subscribeChannels, 'whatsapp_marketing'])
+                    else setSubscribeChannels(subscribeChannels.filter((c) => c !== 'whatsapp_marketing'))
+                  }}
+                  className="h-4 w-4 text-indigo-600 rounded border-gray-300"
+                />
+                <span className="ml-2 text-sm text-gray-700">WhatsApp marketing</span>
+              </label>
+              <label className="flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  disabled={!includePhone}
+                  checked={subscribeChannels.includes('whatsapp_transactional')}
+                  onChange={(e) => {
+                    if (!includePhone) return
+                    if (e.target.checked) setSubscribeChannels([...subscribeChannels, 'whatsapp_transactional'])
+                    else setSubscribeChannels(subscribeChannels.filter((c) => c !== 'whatsapp_transactional'))
+                  }}
+                  className="h-4 w-4 text-indigo-600 rounded border-gray-300"
+                />
+                <span className="ml-2 text-sm text-gray-700">WhatsApp transactional</span>
+              </label>
             </div>
 
-            {/* Column 3: SMS consent */}
-            <div className="space-y-3">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">SMS consent</h3>
-              <p className="text-xs text-gray-500">
-                {includePhone
-                  ? 'Opt profiles into SMS channels.'
-                  : 'Turn on Phone to use SMS consent.'}
-              </p>
-              <div className={`${!includePhone ? 'opacity-50' : ''} space-y-2`}>
-                <label className="flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    disabled={!includePhone}
-                    checked={subscribeChannels.includes('sms_marketing')}
-                    onChange={(e) => {
-                      if (!includePhone) return
-                      if (e.target.checked) setSubscribeChannels([...subscribeChannels, 'sms_marketing'])
-                      else setSubscribeChannels(subscribeChannels.filter((c) => c !== 'sms_marketing'))
-                    }}
-                    className="h-4 w-4 text-indigo-600 rounded border-gray-300"
-                  />
-                  <span className="ml-2 text-sm text-gray-700">SMS marketing</span>
-                </label>
-                <label className="flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    disabled={!includePhone}
-                    checked={subscribeChannels.includes('sms_transactional')}
-                    onChange={(e) => {
-                      if (!includePhone) return
-                      if (e.target.checked) setSubscribeChannels([...subscribeChannels, 'sms_transactional'])
-                      else setSubscribeChannels(subscribeChannels.filter((c) => c !== 'sms_transactional'))
-                    }}
-                    className="h-4 w-4 text-indigo-600 rounded border-gray-300"
-                  />
-                  <span className="ml-2 text-sm text-gray-700">SMS transactional</span>
-                </label>
+            {/* Row 3: External ID (no consent) */}
+            <div className="flex items-start gap-3">
+              <div className="flex items-center gap-3 shrink-0">
+                <Toggle checked={includeExternalId} onChange={setIncludeExternalId} />
+                <span className="text-sm font-medium text-gray-700">External ID</span>
               </div>
+              {count === 1 && includeExternalId && (
+                <input
+                  type="text"
+                  value={customExternalId}
+                  onChange={(e) => setCustomExternalId(e.target.value)}
+                  placeholder="External ID (optional)"
+                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              )}
             </div>
-
-            {/* Column 4: WhatsApp consent */}
-            <div className="space-y-3">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">WhatsApp consent</h3>
-              <p className="text-xs text-gray-500">
-                {includePhone
-                  ? 'Opt profiles into WhatsApp (uses phone).'
-                  : 'Turn on Phone to use WhatsApp consent.'}
-              </p>
-              <div className={`${!includePhone ? 'opacity-50' : ''} space-y-2`}>
-                <label className="flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    disabled={!includePhone}
-                    checked={subscribeChannels.includes('whatsapp_marketing')}
-                    onChange={(e) => {
-                      if (!includePhone) return
-                      if (e.target.checked) setSubscribeChannels([...subscribeChannels, 'whatsapp_marketing'])
-                      else setSubscribeChannels(subscribeChannels.filter((c) => c !== 'whatsapp_marketing'))
-                    }}
-                    className="h-4 w-4 text-indigo-600 rounded border-gray-300"
-                  />
-                  <span className="ml-2 text-sm text-gray-700">WhatsApp marketing</span>
-                </label>
-                <label className="flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    disabled={!includePhone}
-                    checked={subscribeChannels.includes('whatsapp_transactional')}
-                    onChange={(e) => {
-                      if (!includePhone) return
-                      if (e.target.checked) setSubscribeChannels([...subscribeChannels, 'whatsapp_transactional'])
-                      else setSubscribeChannels(subscribeChannels.filter((c) => c !== 'whatsapp_transactional'))
-                    }}
-                    className="h-4 w-4 text-indigo-600 rounded border-gray-300"
-                  />
-                  <span className="ml-2 text-sm text-gray-700">WhatsApp transactional</span>
-                </label>
-              </div>
-            </div>
+            <div />
           </div>
         </div>
       </div>
@@ -934,46 +968,52 @@ export default function GenerateProfilesTab() {
         </div>
         <div className="p-6 space-y-6">
           <div>
-            <div className="flex items-center gap-3 mb-3">
-              <Toggle checked={includeName} onChange={setIncludeName} />
-              <span className="text-sm font-medium text-gray-700">Include name</span>
+            <div className="flex flex-wrap items-center gap-3 mb-3">
+              <div className="flex items-center gap-3">
+                <Toggle checked={includeName} onChange={setIncludeName} />
+                <span className="text-sm font-medium text-gray-700">Include name</span>
+              </div>
+              {includeName && count > 1 && (
+                <div className="flex items-center gap-3 ml-4">
+                  <span className="text-sm font-medium text-gray-700 whitespace-nowrap">Profiles without name: {percentWithoutName}%</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={percentWithoutName}
+                    onChange={(e) => setPercentWithoutName(parseInt(e.target.value, 10) || 0)}
+                    className="w-32 h-2.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  />
+                </div>
+              )}
             </div>
             {includeName && (
               count === 1 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pl-6 border-l-2 border-gray-200">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <label className="inline-flex items-center cursor-pointer">
-                      <input type="checkbox" checked={firstNameEnabled} onChange={(e) => setFirstNameEnabled(e.target.checked)} className="h-4 w-4 text-indigo-600 rounded border-gray-300" />
-                      <span className="ml-2 text-sm text-gray-700">First name</span>
-                    </label>
-                    {firstNameEnabled && (
-                      <input
-                        type="text"
-                        value={firstName}
-                        onChange={(e) => setFirstName(e.target.value)}
-                        placeholder="Optional"
-                        className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
-                      />
-                    )}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">First name</label>
+                    <input
+                      type="text"
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                      placeholder="Optional"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                    />
                   </div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <label className="inline-flex items-center cursor-pointer">
-                      <input type="checkbox" checked={lastNameEnabled} onChange={(e) => setLastNameEnabled(e.target.checked)} className="h-4 w-4 text-indigo-600 rounded border-gray-300" />
-                      <span className="ml-2 text-sm text-gray-700">Last name</span>
-                    </label>
-                    {lastNameEnabled && (
-                      <input
-                        type="text"
-                        value={lastName}
-                        onChange={(e) => setLastName(e.target.value)}
-                        placeholder="Optional"
-                        className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
-                      />
-                    )}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Last name</label>
+                    <input
+                      type="text"
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                      placeholder="Optional"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                    />
                   </div>
+                  <div />
                 </div>
               ) : (
-                <p className="text-sm text-gray-500 pl-6 border-l-2 border-gray-200">Names will be randomly generated.</p>
+                <p className="text-sm text-gray-500">Names will be randomly generated.</p>
               )
             )}
           </div>
@@ -1070,9 +1110,9 @@ export default function GenerateProfilesTab() {
             <p className="text-xs text-gray-500 mb-3">Include address & locale on generated profiles.</p>
             {includeLocation && (
               count === 1 ? (
-                <div className="mt-4 space-y-4 pl-4 border-l-2 border-gray-200">
+                <div className="mt-4 space-y-4">
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Pick a location (optional)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Pick a location (optional)</label>
                     <select
                       value={selectedLocationId}
                       onChange={(e) => setSelectedLocationId(e.target.value)}
@@ -1094,7 +1134,7 @@ export default function GenerateProfilesTab() {
                       { label: 'Locale', value: locale, set: setLocale, placeholder: 'en-US' },
                     ].map(({ label, value, set, placeholder }) => (
                       <div key={label}>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
                         <input type="text" value={value} onChange={(e) => set(e.target.value)} placeholder={placeholder} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500" />
                       </div>
                     ))}

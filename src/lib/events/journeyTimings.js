@@ -24,18 +24,18 @@ export const TIMING_PROFILES = {
     stepMinutesMax: 10,
   },
   booking_spaced: {
-    /** Days from "booking created" to each subsequent event (positive = after create). Reminder/confirm are negative = before booking_at. */
+    /** Days from "booking created" to each event. Reminder/confirm use negative = days before booking_at. Check-in/Attended = at session (booking_at). Not Attended = after session date. */
     daysAfterCreate: {
       'Booking Created': 0,
       'Placed Order': 0,
       'Booking Reminder': -2,
       'Booking Confirmed': -1,
-      'Booking Checked in': 0,
-      'Booking Attended': 0,
+      'Booking Checked in': 3,
+      'Booking Attended': 3,
       'Booking Cancelled': 0,
-      'Booking Not Attended': 0,
+      'Booking Not Attended': 4,
     },
-    /** Default booking-at is create + this many days */
+    /** Session date (booking_at) = create + this many days. Check-in and Attended use this day. */
     bookingAtDaysFromCreate: 3,
   },
   subscription_interval: {
