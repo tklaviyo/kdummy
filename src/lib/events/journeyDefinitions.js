@@ -1,7 +1,7 @@
 /**
  * Journey definitions: Product (online), Product (in-store), Service (booking), Subscription.
  * Type dropdown: Product (online), Product (in-store), Service (booking), Subscription.
- * Variant for Product: Full, Abandon, Cancelled, Refunded.
+ * Variant for Product: Ordered (full), Abandon, Cancelled, Refunded.
  * Product in-store: no abandon variant. Service and Subscription: include Viewed Product, Added to Cart, Started Checkout and have an abandon variant.
  * timingProfile: see journeyTimings.js for spacing between events.
  */
@@ -9,10 +9,10 @@
 const LEAD_EVENTS_CART_CHECKOUT = ['Viewed Product', 'Added to Cart', 'Started Checkout']
 
 export const JOURNEYS = [
-  // ——— Product (online): Variant Full, Abandon, Cancelled, Refunded ———
+  // ——— Product (online): Ordered first, then Abandon, Cancelled, Refunded ———
   {
     id: 'ecommerce_online-full',
-    name: 'Product (online) — Full',
+    name: 'Product (online) — Ordered',
     type: 'ecommerce_online',
     variant: 'full',
     description: 'Complete online purchase: browse → cart → checkout → order → fulfillment',
@@ -68,10 +68,10 @@ export const JOURNEYS = [
     ],
     timingProfile: 'ecommerce_linear',
   },
-  // ——— Product (in-store): order-only events (no browse/cart/checkout); no abandon variant ———
+  // ——— Product (in-store): Ordered first, then Cancelled, Refunded ———
   {
     id: 'ecommerce_instore-full',
-    name: 'Product (in-store) — Full',
+    name: 'Product (in-store) — Ordered',
     type: 'ecommerce_instore',
     variant: 'full',
     description: 'Complete in-store purchase: order → fulfillment',
@@ -109,19 +109,10 @@ export const JOURNEYS = [
     ],
     timingProfile: 'ecommerce_linear',
   },
-  // ——— Subscription: includes Viewed Product, Added to Cart, Started Checkout; has abandon variant ———
-  {
-    id: 'subscription-abandon',
-    name: 'Subscription — Abandon',
-    type: 'subscription',
-    variant: 'abandon',
-    description: 'Browse → cart → checkout, then stop before subscribing',
-    eventNames: [...LEAD_EVENTS_CART_CHECKOUT],
-    timingProfile: 'subscription_interval',
-  },
+  // ——— Subscription: Subscribed first, then Abandon, Cancelled, Expired ———
   {
     id: 'subscription-full',
-    name: 'Subscription — Full',
+    name: 'Subscription — Subscribed',
     type: 'subscription',
     variant: 'full',
     description: 'Browse → cart → checkout → subscribe → renewals → expiry reminder → renewed',
@@ -135,6 +126,15 @@ export const JOURNEYS = [
       'Subscription Renewed',
       'Placed Order',
     ],
+    timingProfile: 'subscription_interval',
+  },
+  {
+    id: 'subscription-abandon',
+    name: 'Subscription — Abandon',
+    type: 'subscription',
+    variant: 'abandon',
+    description: 'Browse → cart → checkout, then stop before subscribing',
+    eventNames: [...LEAD_EVENTS_CART_CHECKOUT],
     timingProfile: 'subscription_interval',
   },
   {
@@ -161,19 +161,10 @@ export const JOURNEYS = [
     ],
     timingProfile: 'subscription_interval',
   },
-  // ——— Booking (service): includes Viewed Product, Added to Cart, Started Checkout; has abandon variant ———
-  {
-    id: 'booking-abandon',
-    name: 'Booking — Abandon',
-    type: 'booking',
-    variant: 'abandon',
-    description: 'Browse → cart → checkout, then stop before booking',
-    eventNames: [...LEAD_EVENTS_CART_CHECKOUT],
-    timingProfile: 'booking_spaced',
-  },
+  // ——— Booking (service): Attended first, then Abandon, Cancelled, Not attended ———
   {
     id: 'booking-full',
-    name: 'Booking — Full',
+    name: 'Booking — Attended',
     type: 'booking',
     variant: 'full',
     description: 'Browse → cart → checkout → create booking → reminder → confirm → check-in → attended',
@@ -186,6 +177,15 @@ export const JOURNEYS = [
       'Booking Checked in',
       'Booking Attended',
     ],
+    timingProfile: 'booking_spaced',
+  },
+  {
+    id: 'booking-abandon',
+    name: 'Booking — Abandon',
+    type: 'booking',
+    variant: 'abandon',
+    description: 'Browse → cart → checkout, then stop before booking',
+    eventNames: [...LEAD_EVENTS_CART_CHECKOUT],
     timingProfile: 'booking_spaced',
   },
   {

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getApiKeyFromRequest, getApiKeyDataType, setApiKeyDataType } from '@/lib/serverStorage'
 
-// Profile property templates - these are the original defaults
+// Profile property templates - these are the original defaults (group: general | locations | preferences | subscriptions | bookings | loyalty | other)
 const originalDefaultPropertyTemplates = {
   gender: {
     name: 'gender',
@@ -11,6 +11,7 @@ const originalDefaultPropertyTemplates = {
     options: ['Male', 'female', 'other'],
     required: false,
     object_property_mapping: null,
+    group: 'general',
   },
   birthday: {
     name: 'birthday',
@@ -19,6 +20,16 @@ const originalDefaultPropertyTemplates = {
     default_value: null,
     required: false,
     object_property_mapping: null,
+    group: 'general',
+  },
+  signup_date: {
+    name: 'signup_date',
+    type: 'date',
+    description: 'Date when profile signed up',
+    default_value: null,
+    required: false,
+    object_property_mapping: null,
+    group: 'general',
   },
   marketing_preferences: {
     name: 'marketing_preferences',
@@ -28,15 +39,7 @@ const originalDefaultPropertyTemplates = {
     options: ['Newsletter', 'product updates', 'events', 'news', 'offers'],
     required: false,
     object_property_mapping: null,
-  },
-  product_preferences: {
-    name: 'product_preferences',
-    type: 'array',
-    description: 'Preferred product category',
-    default_value: null,
-    catalog_source: 'products',
-    required: false,
-    object_property_mapping: null,
+    group: 'preferences',
   },
   signup_store: {
     name: 'signup_store',
@@ -46,15 +49,17 @@ const originalDefaultPropertyTemplates = {
     catalog_source: 'stores',
     required: false,
     object_property_mapping: null,
+    group: 'locations',
   },
-  favourite_store: {
-    name: 'favourite_store',
+  favorite_store: {
+    name: 'favorite_store',
     type: 'string',
     description: 'Favorite store location',
     default_value: null,
     catalog_source: 'stores',
     required: false,
     object_property_mapping: null,
+    group: 'locations',
   },
   recent_store: {
     name: 'recent_store',
@@ -64,14 +69,7 @@ const originalDefaultPropertyTemplates = {
     catalog_source: 'stores',
     required: false,
     object_property_mapping: null,
-  },
-  signup_date: {
-    name: 'signup_date',
-    type: 'date',
-    description: 'Date when profile signed up',
-    default_value: null,
-    required: false,
-    object_property_mapping: null,
+    group: 'locations',
   },
   loyalty_member: {
     name: 'loyalty_member',
@@ -80,6 +78,7 @@ const originalDefaultPropertyTemplates = {
     default_value: false,
     required: false,
     object_property_mapping: null,
+    group: 'loyalty',
   },
   loyalty_signup_date: {
     name: 'loyalty_signup_date',
@@ -88,6 +87,7 @@ const originalDefaultPropertyTemplates = {
     default_value: null,
     required: false,
     object_property_mapping: null,
+    group: 'loyalty',
   },
   current_loyalty_tier: {
     name: 'current_loyalty_tier',
@@ -97,6 +97,7 @@ const originalDefaultPropertyTemplates = {
     catalog_source: 'loyalty',
     required: false,
     object_property_mapping: null,
+    group: 'loyalty',
   },
   next_loyalty_tier: {
     name: 'next_loyalty_tier',
@@ -106,6 +107,7 @@ const originalDefaultPropertyTemplates = {
     catalog_source: 'loyalty',
     required: false,
     object_property_mapping: null,
+    group: 'loyalty',
   },
   loyalty_points: {
     name: 'loyalty_points',
@@ -115,6 +117,7 @@ const originalDefaultPropertyTemplates = {
     catalog_source: 'loyalty',
     required: false,
     object_property_mapping: null,
+    group: 'loyalty',
   },
   loyalty_spend: {
     name: 'loyalty_spend',
@@ -124,6 +127,7 @@ const originalDefaultPropertyTemplates = {
     catalog_source: 'loyalty',
     required: false,
     object_property_mapping: null,
+    group: 'loyalty',
   },
 }
 
@@ -132,15 +136,18 @@ function getDefaultPropertyTemplates(apiKey) {
   const storedDefaults = getApiKeyDataType(apiKey, 'profile_properties_defaults', null)
   const defaultPropertyTemplates = storedDefaults || JSON.parse(JSON.stringify(originalDefaultPropertyTemplates))
   
-  // Merge defaults with any modifications, preserving original_name
+  // Merge defaults with any modifications, preserving original_name.
+  // Omit keys that are no longer in the original set (e.g. product_preferences).
   const templates = {}
   Object.keys(defaultPropertyTemplates).forEach(key => {
     const original = originalDefaultPropertyTemplates[key]
+    if (!original) return // drop deprecated keys
     const current = defaultPropertyTemplates[key]
     templates[current.name] = {
       ...current,
       original_name: original.name,
-      enabled: current.enabled !== undefined ? current.enabled : true, // Default to enabled
+      enabled: current.enabled !== undefined ? current.enabled : true,
+      group: current.group || original?.group || 'other',
     }
   })
   return templates
@@ -167,10 +174,9 @@ export async function GET(request) {
       const customProp = customProperties[key]
       templates[key] = {
         ...customProp,
-        // Ensure enabled defaults to true if not set
         enabled: customProp.enabled !== undefined ? customProp.enabled : true,
-        // Custom properties don't have original_name (they're not defaults)
         original_name: customProp.original_name || null,
+        group: customProp.group || 'other',
       }
     })
   }
@@ -212,6 +218,9 @@ export async function POST(request) {
       )
     }
 
+    const objectProp = data.object_property_mapping?.trim() || null
+    const validMapping = objectProp === 'id' || objectProp === 'name' ? objectProp : null
+
     const property = {
       name: data.name,
       type: data.type,
@@ -219,9 +228,17 @@ export async function POST(request) {
       default_value: data.default_value || null,
       options: data.options || null,
       catalog_source: data.catalog_source || null,
+      catalog_template: data.catalog_template || null,
       required: data.required || false,
-      object_property_mapping: data.object_property_mapping || null,
-      enabled: data.enabled !== undefined ? data.enabled : true, // Default to enabled
+      object_property_mapping: validMapping,
+      enabled: data.enabled !== undefined ? data.enabled : true,
+      group: data.group || 'other',
+      date_min: data.date_min || null,
+      date_max: data.date_max || null,
+      integer_min: data.integer_min != null && data.integer_min !== '' ? data.integer_min : null,
+      integer_max: data.integer_max != null && data.integer_max !== '' ? data.integer_max : null,
+      array_min_items: data.array_min_items != null && data.array_min_items !== '' ? parseInt(data.array_min_items, 10) : null,
+      array_max_items: data.array_max_items != null && data.array_max_items !== '' ? parseInt(data.array_max_items, 10) : null,
     }
 
     const defaultPropertyTemplates = getDefaultPropertyTemplates(apiKey)
@@ -294,7 +311,9 @@ export async function PUT(request) {
       const storedDefaults = getApiKeyDataType(apiKey, 'profile_properties_defaults', null)
       const defaultPropertyTemplates = storedDefaults || JSON.parse(JSON.stringify(originalDefaultPropertyTemplates))
       
-      // Update the default property
+      // Update the default property (allow overriding group)
+      const objectProp = data.object_property_mapping?.trim() || null
+      const validMapping = objectProp === 'id' || objectProp === 'name' ? objectProp : null
       defaultPropertyTemplates[originalName] = {
         name: data.name,
         type: data.type,
@@ -302,9 +321,17 @@ export async function PUT(request) {
         default_value: data.default_value || null,
         options: data.options || null,
         catalog_source: data.catalog_source || null,
+        catalog_template: data.catalog_template || null,
         required: data.required || false,
-        object_property_mapping: data.object_property_mapping || null,
+        object_property_mapping: validMapping,
         enabled: data.enabled !== undefined ? data.enabled : (defaultPropertyTemplates[originalName]?.enabled !== undefined ? defaultPropertyTemplates[originalName].enabled : true),
+        group: data.group || defaultPropertyTemplates[originalName]?.group || originalTemplate.group || 'other',
+        date_min: data.date_min || null,
+        date_max: data.date_max || null,
+        integer_min: data.integer_min != null && data.integer_min !== '' ? data.integer_min : null,
+        integer_max: data.integer_max != null && data.integer_max !== '' ? data.integer_max : null,
+        array_min_items: data.array_min_items != null && data.array_min_items !== '' ? parseInt(data.array_min_items, 10) : null,
+        array_max_items: data.array_max_items != null && data.array_max_items !== '' ? parseInt(data.array_max_items, 10) : null,
       }
 
       // Save updated defaults
@@ -335,6 +362,8 @@ export async function PUT(request) {
         )
       }
 
+      const objectProp = data.object_property_mapping?.trim() || null
+      const validMapping = objectProp === 'id' || objectProp === 'name' ? objectProp : null
       const property = {
         name: data.name,
         type: data.type,
@@ -342,9 +371,17 @@ export async function PUT(request) {
         default_value: data.default_value || null,
         options: data.options || null,
         catalog_source: data.catalog_source || null,
+        catalog_template: data.catalog_template || null,
         required: data.required || false,
-        object_property_mapping: data.object_property_mapping || null,
+        object_property_mapping: validMapping,
         enabled: data.enabled !== undefined ? data.enabled : (customProperties[oldName]?.enabled !== undefined ? customProperties[oldName].enabled : true),
+        group: data.group || customProperties[oldName]?.group || 'other',
+        date_min: data.date_min || null,
+        date_max: data.date_max || null,
+        integer_min: data.integer_min != null && data.integer_min !== '' ? data.integer_min : null,
+        integer_max: data.integer_max != null && data.integer_max !== '' ? data.integer_max : null,
+        array_min_items: data.array_min_items != null && data.array_min_items !== '' ? parseInt(data.array_min_items, 10) : null,
+        array_max_items: data.array_max_items != null && data.array_max_items !== '' ? parseInt(data.array_max_items, 10) : null,
       }
 
       // If name changed, delete old and create new

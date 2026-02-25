@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Navigation from '@/components/Navigation'
@@ -21,6 +21,12 @@ export default function ProfilesPage() {
   const [propertiesCount, setPropertiesCount] = useState(0)
   const [selectedProfileIds, setSelectedProfileIds] = useState(new Set())
   const [deleting, setDeleting] = useState(false)
+  const [hasApiKey, setHasApiKey] = useState(null) // null until after mount to avoid hydration mismatch
+  const propertiesTabRef = useRef(null)
+
+  useEffect(() => {
+    setHasApiKey(!!getActiveApiKey())
+  }, [])
 
   useEffect(() => {
     if (tab === 'list') {
@@ -218,7 +224,7 @@ export default function ProfilesPage() {
                   <div className="p-8 text-center text-gray-500">Loading...</div>
                 ) : profiles.length === 0 ? (
                   <div className="p-8 text-center text-gray-500">
-                    {!getActiveApiKey() ? (
+                    {hasApiKey === false || hasApiKey === null ? (
                       <p className="mb-4">Set your API key in Settings to view profiles. Generated profiles are stored per account.</p>
                     ) : (
                       <>
@@ -304,13 +310,22 @@ export default function ProfilesPage() {
           )}
 
           {tab === 'configure' && (
-            <div className="bg-white shadow rounded-lg">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-xl font-semibold text-gray-900">Configure Properties ({propertiesCount})</h2>
+            <div>
+              <div className="mb-6 flex justify-between items-center">
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900">Configure Properties ({propertiesCount})</h2>
+                  <p className="mt-1 text-sm text-gray-600">
+                    Define default property settings here. These settings drive what is available and how values are generated on the Generate tab.
+                  </p>
+                </div>
+                <button
+                  onClick={() => propertiesTabRef.current?.openAddModal?.()}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition-colors"
+                >
+                  Add Property
+                </button>
               </div>
-              <div className="p-6">
-                <ProfilePropertiesTab onPropertiesChange={fetchPropertiesCount} />
-              </div>
+              <ProfilePropertiesTab ref={propertiesTabRef} headerRenderedByParent onPropertiesChange={fetchPropertiesCount} />
             </div>
           )}
 

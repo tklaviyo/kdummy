@@ -2,12 +2,15 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { generateEmail, generatePhoneNumber, generateExternalId, generateDate, generatePropertyValue } from '@/lib/utils'
+import { generateEmail, generateExternalId, generateDate, generatePropertyValue } from '@/lib/utils'
 import { getNameByGender, getConsistentLocation, generatePhoneFromLocation, generateAddressFromLocation } from '@/lib/consistentData'
 import { getLocationsForCountries, getRandomLocationFromCountries } from '@/lib/locationGenerator'
 import { generatePhoneFromCountry } from '@/lib/countryUtils'
-import { getActiveApiKey } from '@/lib/storage'
+import { getActiveApiKey, getActiveAccount } from '@/lib/storage'
 import { useConfirm } from '@/context/ConfirmContext'
+import { buildKlaviyoProfilePayload, buildKlaviyoSubscriptionPayload, channelsToConsent } from '@/lib/klaviyoPayloads'
+import { groupProperties, isDefaultProfileProperty } from '@/lib/profilePropertyGroups'
+import { getCatalogItemsForSource } from '@/lib/defaultCatalogTemplates'
 
 export default function GenerateProfilesTab() {
   const router = useRouter()
@@ -19,9 +22,9 @@ export default function GenerateProfilesTab() {
   const [propertyValues, setPropertyValues] = useState({})
   
   // Generation settings
+  const [profileModeSingle, setProfileModeSingle] = useState(true) // true = single profile, false = multiple
   const [count, setCount] = useState(1)
   const [emailDomain, setEmailDomain] = useState('klaviyo-demo.com')
-  const [percentWithoutName, setPercentWithoutName] = useState(0)
   const [includeEmail, setIncludeEmail] = useState(true)
   const [includePhone, setIncludePhone] = useState(false)
   const [includeExternalId, setIncludeExternalId] = useState(false)
@@ -47,6 +50,7 @@ export default function GenerateProfilesTab() {
   const [availableCountries, setAvailableCountries] = useState([])
   const [showCountryDropdown, setShowCountryDropdown] = useState(false)
   const [openMultiSelects, setOpenMultiSelects] = useState({})
+  const [activePropertyGroupId, setActivePropertyGroupId] = useState('all')
 
   useEffect(() => {
     fetchProperties()
@@ -92,13 +96,10 @@ export default function GenerateProfilesTab() {
     if (availableCountries.length > 0) {
       let countriesToUse = []
       if (selectAllCountries || selectedCountries.length === 0) {
-        // Use all countries if "Select All" is checked or no countries selected
         countriesToUse = availableCountries
       } else {
-        // Filter to only selected countries
         countriesToUse = availableCountries.filter(c => selectedCountries.includes(c.code))
       }
-      
       if (countriesToUse.length > 0) {
         const filtered = getLocationsForCountries(countriesToUse)
         setAvailableLocations(filtered)
@@ -107,6 +108,18 @@ export default function GenerateProfilesTab() {
       }
     }
   }, [selectedCountries, availableCountries, selectAllCountries])
+
+  useEffect(() => {
+    if (profileModeSingle) {
+      if (selectedCountries.length > 1) setSelectedCountries([selectedCountries[0]])
+      if (count !== 1) setCount(1)
+    }
+  }, [profileModeSingle])
+
+  // Phone cannot be used when generating multiple profiles; uncheck when switching to multiple
+  useEffect(() => {
+    if (count > 1) setIncludePhone(false)
+  }, [count])
 
   useEffect(() => {
     if (count === 1) {
@@ -133,6 +146,13 @@ export default function GenerateProfilesTab() {
       setPropertyValues({})
     }
   }, [count, selectedProperties, availableProperties])
+
+  useEffect(() => {
+    if (availableProperties.length === 0) return
+    const grouped = groupProperties(availableProperties)
+    const hasActive = activePropertyGroupId === 'all' || grouped.some((g) => g.groupId === activePropertyGroupId)
+    if (!hasActive && grouped.length > 0) setActivePropertyGroupId('all')
+  }, [availableProperties, activePropertyGroupId])
 
   // Helper to add API key to fetch requests
   const fetchWithApiKey = async (url, options = {}) => {
@@ -168,7 +188,8 @@ export default function GenerateProfilesTab() {
       
       const initialSelection = {}
       enabledProperties.forEach(prop => {
-        initialSelection[prop.name] = true
+        // Default (built-in) properties selected by default; custom properties deselected
+        initialSelection[prop.name] = isDefaultProfileProperty(prop)
       })
       setSelectedProperties(initialSelection)
     } catch (error) {
@@ -181,6 +202,8 @@ export default function GenerateProfilesTab() {
       const data = await fetchWithApiKey('/api/data-catalog')
       setCatalogData({
         products: data.data.products || [],
+        services: data.data.services || [],
+        subscriptions: data.data.subscriptions || [],
         locations: data.data.locations || [],
         reservations: data.data.reservations || [],
         loyalty: data.data.loyalty || null,
@@ -201,48 +224,87 @@ export default function GenerateProfilesTab() {
 
   const getCatalogValue = (property) => {
     if (!property.catalog_source) return null
-
-    if (property.catalog_source === 'loyalty' || property.catalog_source === 'loyalty_tiers') {
-      if (catalogData.loyalty && catalogData.loyalty.tiers) {
-        const tiers = catalogData.loyalty.tiers || []
-        if (tiers.length === 0) return null
-        const randomTier = tiers[Math.floor(Math.random() * tiers.length)]
-        return property.object_property_mapping 
-          ? randomTier[property.object_property_mapping] 
-          : randomTier.name
-      }
-      return null
-    }
-
-    if (property.catalog_source === 'stores') {
-      const catalog = catalogData.locations || []
-      if (catalog.length === 0) return null
-      const randomItem = catalog[Math.floor(Math.random() * catalog.length)]
-      return property.object_property_mapping 
-        ? randomItem[property.object_property_mapping] 
-        : randomItem.name || randomItem.id
-    }
-
-    const catalog = catalogData[property.catalog_source]
-    if (!catalog || catalog.length === 0) return null
-
-    const randomItem = catalog[Math.floor(Math.random() * catalog.length)]
-    
-    if (property.object_property_mapping && randomItem[property.object_property_mapping] !== undefined) {
-      return randomItem[property.object_property_mapping]
-    }
-    
-    switch (property.catalog_source) {
-      case 'products':
-        return property.name === 'favorite_product' ? randomItem.name : randomItem.id
+    const source = property.catalog_source === 'stores' ? 'locations' : property.catalog_source
+    if (source === 'products' || source === 'services' || source === 'subscriptions') return null
+    const items = getCatalogItemsForSource(source, catalogData, true)
+    if (!items.length) return null
+    const randomItem = items[Math.floor(Math.random() * items.length)]
+    const field = property.object_property_mapping === 'id' || property.object_property_mapping === 'name' ? property.object_property_mapping : 'name'
+    if (randomItem[field] !== undefined) return randomItem[field]
+    switch (source) {
       case 'locations':
-        return property.name === 'favourite_store' || property.name === 'last_purchase_location' 
-          ? randomItem.name 
-          : randomItem.id
+        return property.name === 'favorite_store' || property.name === 'last_purchase_location' ? randomItem.name : randomItem.id
       case 'reservations':
         return randomItem.name || randomItem.id
       default:
         return randomItem.name || randomItem.id
+    }
+  }
+
+  /** Returns one generated value for a single property (used for "Generate" button on single profile). */
+  const getOneGeneratedPropertyValue = (prop, profileGender = null, profileLocation = null) => {
+    if (prop.catalog_source === 'locations' && profileLocation) {
+      if (prop.name === 'favorite_store' || prop.name === 'last_purchase_location') return profileLocation.city
+      return profileLocation.name || profileLocation.city
+    }
+    if (prop.catalog_source) {
+      const source = prop.catalog_source === 'stores' ? 'locations' : prop.catalog_source
+      if (source === 'products' || source === 'services' || source === 'subscriptions') return null
+      if (prop.type === 'array') {
+        const items = getCatalogItemsForSource(source, catalogData, true)
+        const field = prop.object_property_mapping === 'id' || prop.object_property_mapping === 'name' ? prop.object_property_mapping : 'name'
+        const minN = prop.array_min_items != null ? Math.max(0, parseInt(prop.array_min_items, 10)) : 0
+        const maxN = prop.array_max_items != null ? Math.max(minN, parseInt(prop.array_max_items, 10)) : 3
+        const n = Math.min(minN + Math.floor(Math.random() * (Math.max(maxN - minN, 0) + 1)), items.length)
+        const selected = []
+        const available = [...items]
+        for (let i = 0; i < n && available.length > 0; i++) {
+          const idx = Math.floor(Math.random() * available.length)
+          const item = available.splice(idx, 1)[0]
+          const v = item[field] !== undefined ? item[field] : item.name || item.id
+          if (v != null && v !== '') selected.push(v)
+        }
+        return selected.length ? selected : null
+      }
+      return getCatalogValue(prop)
+    }
+    if (prop.default_value !== null && prop.default_value !== undefined && prop.default_value !== '') {
+      return prop.default_value
+    }
+    switch (prop.type) {
+      case 'string':
+        if (prop.options && prop.options.length > 0) return prop.options[Math.floor(Math.random() * prop.options.length)]
+        return generatePropertyValue('string', prop.name)
+      case 'integer': {
+        const min = prop.integer_min ? parseInt(prop.integer_min) : 0
+        const max = prop.integer_max ? parseInt(prop.integer_max) : 1000
+        return Math.floor(Math.random() * (max - min + 1)) + min
+      }
+      case 'decimal':
+        return parseFloat((Math.random() * 1000).toFixed(2))
+      case 'boolean':
+        return generatePropertyValue('boolean', prop.name)
+      case 'date': {
+        const dateMin = prop.date_min || '1970-01-01'
+        const dateMax = prop.date_max || new Date().toISOString().split('T')[0]
+        return generateDate(dateMin, dateMax)
+      }
+      case 'array':
+        if (prop.options && prop.options.length > 0 && !prop.catalog_source) {
+          const minN = prop.array_min_items != null ? Math.max(0, parseInt(prop.array_min_items, 10)) : 0
+          const maxN = prop.array_max_items != null ? Math.max(minN, parseInt(prop.array_max_items, 10)) : 3
+          const numItems = Math.min(minN + Math.floor(Math.random() * (maxN - minN + 1)), prop.options.length)
+          const selected = []
+          const available = [...prop.options]
+          for (let i = 0; i < numItems && available.length > 0; i++) {
+            const randomIndex = Math.floor(Math.random() * available.length)
+            selected.push(available.splice(randomIndex, 1)[0])
+          }
+          return selected
+        }
+        return generatePropertyValue('array', prop.name)
+      default:
+        return generatePropertyValue('string', prop.name)
     }
   }
 
@@ -271,10 +333,29 @@ export default function GenerateProfilesTab() {
       }
       else if (prop.catalog_source) {
         if (prop.catalog_source === 'locations' && profileLocation) {
-          if (prop.name === 'favourite_store' || prop.name === 'last_purchase_location') {
+          if (prop.name === 'favorite_store' || prop.name === 'last_purchase_location') {
             value = profileLocation.city
           } else {
             value = profileLocation.name || profileLocation.city
+          }
+        } else if (prop.type === 'array') {
+          const source = prop.catalog_source === 'stores' ? 'locations' : prop.catalog_source
+          if (source === 'products' || source === 'services' || source === 'subscriptions') value = null
+          else {
+            const items = getCatalogItemsForSource(source, catalogData, true)
+            const field = prop.object_property_mapping === 'id' || prop.object_property_mapping === 'name' ? prop.object_property_mapping : 'name'
+            const minN = prop.array_min_items != null ? Math.max(0, parseInt(prop.array_min_items, 10)) : 0
+            const maxN = prop.array_max_items != null ? Math.max(minN, parseInt(prop.array_max_items, 10)) : 3
+            const n = Math.min(minN + Math.floor(Math.random() * (Math.max(maxN - minN, 0) + 1)), items.length)
+            const selected = []
+            const available = [...items]
+            for (let i = 0; i < n && available.length > 0; i++) {
+              const idx = Math.floor(Math.random() * available.length)
+              const item = available.splice(idx, 1)[0]
+              const v = item[field] !== undefined ? item[field] : item.name || item.id
+              if (v != null && v !== '') selected.push(v)
+            }
+            value = selected.length ? selected : null
           }
         } else {
           value = getCatalogValue(prop)
@@ -308,7 +389,9 @@ export default function GenerateProfilesTab() {
             break
           case 'array':
             if (prop.options && prop.options.length > 0 && !prop.catalog_source) {
-              const numItems = Math.floor(Math.random() * 3) + 1
+              const minN = prop.array_min_items != null ? Math.max(0, parseInt(prop.array_min_items, 10)) : 0
+              const maxN = prop.array_max_items != null ? Math.max(minN, parseInt(prop.array_max_items, 10)) : 3
+              const numItems = Math.min(minN + Math.floor(Math.random() * (maxN - minN + 1)), prop.options.length)
               const selected = []
               const available = [...prop.options]
               for (let i = 0; i < numItems && available.length > 0; i++) {
@@ -471,13 +554,13 @@ export default function GenerateProfilesTab() {
       const custom = overrides.customEmail
       profile.attributes.email = (custom !== undefined && custom !== null && String(custom).trim() !== '')
         ? String(custom).trim()
-        : generateEmail(name?.first || '', name?.last || '', { domain: domain || 'klaviyo-demo.com', usedEmails })
+        : generateEmail(name?.first || '', name?.last || '', { domain: domain || (count > 1 ? 'klaviyo-dummy.com' : 'klaviyo-demo.com'), usedEmails })
     }
-    if (includePhone) {
+    // Phone: only for single profile, and only from user input (no random generation)
+    if (includePhone && count === 1) {
       const custom = overrides.customPhone
-      profile.attributes.phone_number = (custom !== undefined && custom !== null && String(custom).trim() !== '')
-        ? String(custom).trim()
-        : (phoneNumber || generatePhoneNumber())
+      const value = (custom !== undefined && custom !== null && String(custom).trim() !== '') ? String(custom).trim() : null
+      if (value) profile.attributes.phone_number = value
     }
     if (includeExternalId) {
       const custom = overrides.customExternalId
@@ -500,6 +583,11 @@ export default function GenerateProfilesTab() {
       return
     }
 
+    if (count === 1 && includePhone && (!customPhone || String(customPhone).trim() === '')) {
+      await alert('Please enter a phone number or uncheck Phone. Phone cannot be auto-generated.')
+      return
+    }
+
     const ok = await confirm(`Generate ${count} profile(s)?`)
     if (!ok) return
 
@@ -508,18 +596,11 @@ export default function GenerateProfilesTab() {
     const errors = []
     const usedEmails = new Set()
 
-    const withoutNameCount = Math.floor(count * (percentWithoutName / 100))
-    const includeNameForProfile = Array.from({ length: count }, (_, i) => i >= withoutNameCount)
-    for (let i = includeNameForProfile.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [includeNameForProfile[i], includeNameForProfile[j]] = [includeNameForProfile[j], includeNameForProfile[i]]
-    }
-
     try {
       for (let i = 0; i < count; i++) {
         const profileData = generateProfile({
-          includeNameOverride: includeNameForProfile[i],
-          emailDomain: emailDomain || 'klaviyo-demo.com',
+          includeNameOverride: includeName,
+          emailDomain: count > 1 ? 'klaviyo-dummy.com' : (emailDomain || 'klaviyo-demo.com'),
           usedEmails: includeEmail ? usedEmails : null,
           ...(count === 1 && {
             customEmail,
@@ -529,31 +610,38 @@ export default function GenerateProfilesTab() {
         })
         
         try {
-          const result = await fetchWithApiKey('/api/profiles', {
+          const profilePayload = buildKlaviyoProfilePayload(profileData.attributes)
+          const resData = await fetchWithApiKey('/api/profiles', {
             method: 'POST',
-            body: JSON.stringify({ data: profileData }),
+            body: JSON.stringify(profilePayload),
           })
-          
-          createdProfiles.push(result.data)
+          const created = resData?.data
+          if (!created) throw new Error(resData?.errors?.[0]?.detail || 'Failed to create profile')
+          createdProfiles.push(created)
           
           if (subscribeChannels.length > 0) {
-            const profile = result.data
-            const subscribeData = {
-              data: {
-                type: 'subscription',
-                attributes: {
-                  channels: subscribeChannels,
-                  profile_id: profile.id,
-                  email: profile.attributes.email,
-                  phone_number: profile.attributes.phone_number,
-                }
+            const activeAccount = getActiveAccount()
+            const listId = activeAccount?.listId || null
+            if (!listId) {
+              errors.push({ index: i + 1, error: 'List ID not set. Set it in Settings → Klaviyo Accounts to subscribe profiles to email/SMS/WhatsApp.' })
+            } else {
+              const subscriptionPayload = buildKlaviyoSubscriptionPayload({
+                profile: {
+                  email: created.attributes?.email ?? profileData.attributes.email,
+                  phone_number: created.attributes?.phone_number ?? profileData.attributes.phone_number,
+                  external_id: created.attributes?.external_id ?? profileData.attributes.external_id,
+                },
+                listId,
+                consent: channelsToConsent(subscribeChannels),
+              })
+              const subRes = await fetchWithApiKey('/api/subscribe', {
+                method: 'POST',
+                body: JSON.stringify(subscriptionPayload),
+              })
+              if (subRes?.errors?.length) {
+                errors.push({ index: i + 1, error: subRes.errors[0]?.detail || 'Subscribe failed' })
               }
             }
-            
-            await fetchWithApiKey('/api/subscribe', {
-              method: 'POST',
-              body: JSON.stringify(subscribeData),
-            })
           }
         } catch (error) {
           errors.push({ index: i + 1, error: error.message })
@@ -629,55 +717,210 @@ export default function GenerateProfilesTab() {
 
   return (
     <div className="space-y-6">
-      {/* 1. Profile count */}
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+      {/* 1. Profile count + Countries — two columns: profiles (cards + count) | countries */}
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-visible">
         <div className="bg-gradient-to-r from-indigo-50 to-white px-6 py-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900">
             <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white text-sm font-bold mr-3">1</span>
-            Profile count
+            Profile count & countries
           </h2>
-          <p className="text-sm text-gray-500 mt-1 ml-11">How many profiles to generate (1–100).</p>
+          <p className="text-sm text-gray-500 mt-1 ml-11">Single or multiple profiles. Phone and location are determined by the selected country/countries and stay consistent per profile.</p>
         </div>
-        <div className="p-6">
-          <label className="block text-sm font-medium text-gray-700 mb-3">Profile count</label>
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5">
-            <input
-              type="range"
-              min="1"
-              max="100"
-              value={count}
-              onChange={(e) => setCount(parseInt(e.target.value, 10) || 1)}
-              className="w-full sm:w-72 h-2.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-            />
-            <div className="flex items-center gap-2">
+        <div className="p-6 space-y-6">
+          {/* Row 1: Number of profiles — narrow cards (1/4 width each, ~half total); counter input larger, no native spinners */}
+          <div>
+            <h3 className="text-sm font-medium text-gray-700 mb-3">Number of profiles</h3>
+            <div className="flex gap-3 items-stretch max-w-[50%]">
               <button
                 type="button"
-                onClick={() => setCount((prev) => Math.max(1, prev - 1))}
-                className="h-9 w-9 flex items-center justify-center rounded-md border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
-                aria-label="Decrease profile count"
-              >
-                –
-              </button>
-              <input
-                type="number"
-                min="1"
-                max="100"
-                value={count}
-                onChange={(e) => {
-                  const val = parseInt(e.target.value, 10)
-                  if (!Number.isNaN(val)) setCount(Math.min(Math.max(val, 1), 100))
+                onClick={() => {
+                  setProfileModeSingle(true)
+                  setCount(1)
+                  setSelectedCountries((prev) => (prev.length ? [prev[0]] : ['US']))
                 }}
-                className="w-20 px-3 py-2 border border-gray-300 rounded-md text-sm text-center focus:ring-indigo-500 focus:border-indigo-500"
-              />
-              <button
-                type="button"
-                onClick={() => setCount((prev) => Math.min(100, prev + 1))}
-                className="h-9 w-9 flex items-center justify-center rounded-md border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
-                aria-label="Increase profile count"
+                className={`w-1/2 min-h-[88px] flex flex-col justify-start p-4 rounded-lg border-2 text-left transition-colors ${
+                  profileModeSingle
+                    ? 'border-indigo-600 bg-indigo-50/80 text-indigo-900 shadow-sm'
+                    : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50'
+                }`}
               >
-                +
+                <span className="text-sm font-medium block">Single</span>
+                <span className="text-xs text-gray-500 mt-0.5 block">1 profile</span>
               </button>
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  setProfileModeSingle(false)
+                  if (count < 2) setCount(2)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setProfileModeSingle(false)
+                    if (count < 2) setCount(2)
+                  }
+                }}
+                className={`w-1/2 min-h-[88px] flex flex-row items-start justify-between gap-2 p-4 rounded-lg border-2 text-left transition-colors cursor-pointer ${
+                  !profileModeSingle
+                    ? 'border-indigo-600 bg-indigo-50/80 text-indigo-900 shadow-sm'
+                    : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                <div className="min-w-0">
+                  <span className="text-sm font-medium block">Multiple</span>
+                  <span className="text-xs text-gray-500 mt-0.5 block">2–100 profiles</span>
+                </div>
+                <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setCount((prev) => Math.max(2, prev - 1))
+                      const id = setInterval(() => {
+                        setCount((prev) => {
+                          if (prev <= 2) {
+                            clearInterval(id)
+                            return 2
+                          }
+                          return prev - 1
+                        })
+                      }, 120)
+                      const stop = () => {
+                        clearInterval(id)
+                        document.removeEventListener('mouseup', stop)
+                        document.removeEventListener('mouseleave', stop)
+                      }
+                      document.addEventListener('mouseup', stop)
+                      document.addEventListener('mouseleave', stop)
+                    }}
+                    className="h-7 w-7 flex items-center justify-center rounded border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    aria-label="Decrease profile count"
+                  >
+                    −
+                  </button>
+                  <input
+                    type="number"
+                    min={2}
+                    max={100}
+                    value={count}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10)
+                      if (!Number.isNaN(val)) setCount(Math.min(Math.max(val, 2), 100))
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-14 h-9 px-2 border border-gray-300 rounded-md text-sm text-center focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setCount((prev) => Math.min(100, prev + 1))
+                      const id = setInterval(() => {
+                        setCount((prev) => {
+                          if (prev >= 100) {
+                            clearInterval(id)
+                            return 100
+                          }
+                          return prev + 1
+                        })
+                      }, 120)
+                      const stop = () => {
+                        clearInterval(id)
+                        document.removeEventListener('mouseup', stop)
+                        document.removeEventListener('mouseleave', stop)
+                      }
+                      document.addEventListener('mouseup', stop)
+                      document.addEventListener('mouseleave', stop)
+                    }}
+                    className="h-7 w-7 flex items-center justify-center rounded border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    aria-label="Increase profile count"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
             </div>
+          </div>
+
+          {/* Row 2: Countries on its own row */}
+          <div className="relative max-w-xs" id="country-dropdown-container">
+            <h3 className="text-sm font-medium text-gray-700 mb-2">Countries</h3>
+            <p className="text-xs text-gray-500 mb-2">Phone and address from selected country/countries. Each profile gets one country; for multiple, countries are distributed randomly.</p>
+            {profileModeSingle ? (
+              <select
+                value={selectedCountries[0] || ''}
+                onChange={(e) => setSelectedCountries(e.target.value ? [e.target.value] : ['US'])}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+              >
+                {availableCountries.length === 0 ? (
+                  <option value="">Loading...</option>
+                ) : (
+                  availableCountries.map((country) => (
+                    <option key={country.code} value={country.code}>{country.name} ({country.code})</option>
+                  ))
+                )}
+              </select>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setShowCountryDropdown(!showCountryDropdown) }}
+                  className="w-full px-3 py-2 text-left border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white flex justify-between items-center text-sm"
+                >
+                  <span className="text-gray-700">
+                    {selectAllCountries ? `All countries (${availableCountries.length})` : selectedCountries.length > 0 ? `${selectedCountries.length} selected` : 'Select countries...'}
+                  </span>
+                  <svg className={`h-5 w-5 text-gray-400 shrink-0 ${showCountryDropdown ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {showCountryDropdown && (
+                  <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-xl max-h-64 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                    <div className="p-2 border-b border-gray-100 sticky top-0 bg-white">
+                      <label className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectAllCountries}
+                          onChange={(e) => {
+                            setSelectAllCountries(e.target.checked)
+                            if (e.target.checked) setSelectedCountries([])
+                            else setSelectedCountries(['US'])
+                          }}
+                          className="h-4 w-4 text-indigo-600 rounded border-gray-300"
+                        />
+                        <span className="ml-2 text-sm font-medium text-gray-900">Select all</span>
+                      </label>
+                    </div>
+                    <div className="p-2 max-h-52 overflow-y-auto">
+                      {availableCountries.map((country) => (
+                        <label key={country.code} className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selectAllCountries || selectedCountries.includes(country.code)}
+                            onChange={(e) => {
+                              if (selectAllCountries) return
+                              if (e.target.checked) setSelectedCountries([...selectedCountries, country.code])
+                              else setSelectedCountries(selectedCountries.filter((c) => c !== country.code))
+                            }}
+                            disabled={selectAllCountries}
+                            className="h-4 w-4 text-indigo-600 rounded border-gray-300"
+                          />
+                          <span className="ml-2 text-sm text-gray-900">{country.name}</span>
+                          <span className="ml-1 text-xs text-gray-500">({country.code})</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <p className="text-xs text-gray-500 mt-1">
+                  {selectAllCountries ? 'All countries' : `${selectedCountries.length} selected`}
+                  {!selectAllCountries && selectedCountries.length > 0 && ` · ${availableLocations.length} locations`}
+                </p>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -821,31 +1064,68 @@ export default function GenerateProfilesTab() {
           </p>
         </div>
         <div className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-8 gap-y-4">
-            {/* Header row */}
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Identifiers</h3>
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Consent</h3>
-
-            {/* Row 1: Email + Email marketing */}
-            <div className="flex items-start gap-3">
-              <div className="flex items-center gap-3 shrink-0">
-                <Toggle checked={includeEmail} onChange={setIncludeEmail} />
-                <span className="text-sm font-medium text-gray-700">Email</span>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-4">
+            {/* Column 1 (1/3): Identifiers */}
+            <div className="md:col-span-1 space-y-4 min-w-0">
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Identifiers</h3>
+              <div>
+                <div className="flex items-center gap-3">
+                  <Toggle checked={includeEmail} onChange={setIncludeEmail} />
+                  <span className="text-sm font-medium text-gray-700">Email</span>
+                </div>
+                {count === 1 && includeEmail && (
+                  <input
+                    type="email"
+                    value={customEmail}
+                    onChange={(e) => setCustomEmail(e.target.value)}
+                    placeholder="Email (leave blank to auto generate)"
+                    className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                )}
               </div>
-              {count === 1 && includeEmail && (
-                <input
-                  type="email"
-                  value={customEmail}
-                  onChange={(e) => setCustomEmail(e.target.value)}
-                  placeholder="Email address (optional)"
-                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
-                />
-              )}
+              <div>
+                <div className="flex items-center gap-3">
+                  <Toggle
+                    checked={includePhone}
+                    onChange={setIncludePhone}
+                    disabled={count > 1}
+                  />
+                  <span className={`text-sm font-medium ${count > 1 ? 'text-gray-400' : 'text-gray-700'}`}>Phone</span>
+                </div>
+                {count > 1 && (
+                  <p className="text-xs text-amber-600 mt-1">Not available when generating multiple profiles (to avoid accidental real SMS).</p>
+                )}
+                {count === 1 && includePhone && (
+                  <input
+                    type="tel"
+                    value={customPhone}
+                    onChange={(e) => setCustomPhone(e.target.value)}
+                    placeholder="Phone (enter to enable SMS/WhatsApp)"
+                    className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                )}
+              </div>
+              <div>
+                <div className="flex items-center gap-3">
+                  <Toggle checked={includeExternalId} onChange={setIncludeExternalId} />
+                  <span className="text-sm font-medium text-gray-700">External ID</span>
+                </div>
+                {count === 1 && includeExternalId && (
+                  <input
+                    type="text"
+                    value={customExternalId}
+                    onChange={(e) => setCustomExternalId(e.target.value)}
+                    placeholder="External ID (leave blank to auto generate)"
+                    className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                )}
+              </div>
             </div>
-            <div className="space-y-2">
-              <label
-                className={`flex items-center ${!includeEmail ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-              >
+
+            {/* Column 2 (1/3): Consent — all in one column */}
+            <div className="md:col-span-1 space-y-4">
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Consent</h3>
+              <label className={`flex items-center ${!includeEmail ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
                 <input
                   type="checkbox"
                   disabled={!includeEmail}
@@ -859,26 +1139,7 @@ export default function GenerateProfilesTab() {
                 />
                 <span className="ml-2 text-sm text-gray-700">Email marketing</span>
               </label>
-            </div>
-
-            {/* Row 2: Phone + SMS & WhatsApp consent */}
-            <div className="flex items-start gap-3">
-              <div className="flex items-center gap-3 shrink-0">
-                <Toggle checked={includePhone} onChange={setIncludePhone} />
-                <span className="text-sm font-medium text-gray-700">Phone</span>
-              </div>
-              {count === 1 && includePhone && (
-                <input
-                  type="tel"
-                  value={customPhone}
-                  onChange={(e) => setCustomPhone(e.target.value)}
-                  placeholder="Phone number (optional)"
-                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
-                />
-              )}
-            </div>
-            <div className={`${!includePhone ? 'opacity-50' : ''} space-y-2`}>
-              <label className="flex items-center cursor-pointer">
+              <label className={`flex items-center ${!includePhone ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
                 <input
                   type="checkbox"
                   disabled={!includePhone}
@@ -892,7 +1153,7 @@ export default function GenerateProfilesTab() {
                 />
                 <span className="ml-2 text-sm text-gray-700">SMS marketing</span>
               </label>
-              <label className="flex items-center cursor-pointer">
+              <label className={`flex items-center ${!includePhone ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
                 <input
                   type="checkbox"
                   disabled={!includePhone}
@@ -906,7 +1167,7 @@ export default function GenerateProfilesTab() {
                 />
                 <span className="ml-2 text-sm text-gray-700">SMS transactional</span>
               </label>
-              <label className="flex items-center cursor-pointer">
+              <label className={`flex items-center ${!includePhone ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
                 <input
                   type="checkbox"
                   disabled={!includePhone}
@@ -920,7 +1181,7 @@ export default function GenerateProfilesTab() {
                 />
                 <span className="ml-2 text-sm text-gray-700">WhatsApp marketing</span>
               </label>
-              <label className="flex items-center cursor-pointer">
+              <label className={`flex items-center ${!includePhone ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
                 <input
                   type="checkbox"
                   disabled={!includePhone}
@@ -935,24 +1196,6 @@ export default function GenerateProfilesTab() {
                 <span className="ml-2 text-sm text-gray-700">WhatsApp transactional</span>
               </label>
             </div>
-
-            {/* Row 3: External ID (no consent) */}
-            <div className="flex items-start gap-3">
-              <div className="flex items-center gap-3 shrink-0">
-                <Toggle checked={includeExternalId} onChange={setIncludeExternalId} />
-                <span className="text-sm font-medium text-gray-700">External ID</span>
-              </div>
-              {count === 1 && includeExternalId && (
-                <input
-                  type="text"
-                  value={customExternalId}
-                  onChange={(e) => setCustomExternalId(e.target.value)}
-                  placeholder="External ID (optional)"
-                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
-                />
-              )}
-            </div>
-            <div />
           </div>
         </div>
       </div>
@@ -964,7 +1207,7 @@ export default function GenerateProfilesTab() {
             <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white text-sm font-bold mr-3">3</span>
             Name & location
           </h2>
-          <p className="text-sm text-gray-500 mt-1 ml-11">Optional. Single profile can use a specific location from selected countries.</p>
+          <p className="text-sm text-gray-500 mt-1 ml-11">Optional. Single profile can use a specific location from the country selected in step 1.</p>
         </div>
         <div className="p-6 space-y-6">
           <div>
@@ -973,19 +1216,6 @@ export default function GenerateProfilesTab() {
                 <Toggle checked={includeName} onChange={setIncludeName} />
                 <span className="text-sm font-medium text-gray-700">Include name</span>
               </div>
-              {includeName && count > 1 && (
-                <div className="flex items-center gap-3 ml-4">
-                  <span className="text-sm font-medium text-gray-700 whitespace-nowrap">Profiles without name: {percentWithoutName}%</span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={percentWithoutName}
-                    onChange={(e) => setPercentWithoutName(parseInt(e.target.value, 10) || 0)}
-                    className="w-32 h-2.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                  />
-                </div>
-              )}
             </div>
             {includeName && (
               count === 1 ? (
@@ -996,7 +1226,7 @@ export default function GenerateProfilesTab() {
                       type="text"
                       value={firstName}
                       onChange={(e) => setFirstName(e.target.value)}
-                      placeholder="Optional"
+                      placeholder="First name (leave blank to auto generate)"
                       className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
                     />
                   </div>
@@ -1006,7 +1236,7 @@ export default function GenerateProfilesTab() {
                       type="text"
                       value={lastName}
                       onChange={(e) => setLastName(e.target.value)}
-                      placeholder="Optional"
+                      placeholder="Last name (leave blank to auto generate)"
                       className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
                     />
                   </div>
@@ -1017,102 +1247,17 @@ export default function GenerateProfilesTab() {
               )
             )}
           </div>
-          {/* Countries inside Name & location, above Location section */}
-          <div>
-            <h3 className="text-sm font-medium text-gray-700 mb-2">Countries</h3>
-            <p className="text-xs text-gray-500 mb-2">
-              Required. Affects phone numbers, locations, and other profile properties.
-            </p>
-            <div className="relative max-w-md" id="country-dropdown-container">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setShowCountryDropdown(!showCountryDropdown)
-                }}
-                className="w-full px-3 py-2 text-left border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white flex justify-between items-center text-sm"
-              >
-                <span className="text-gray-700">
-                  {selectAllCountries
-                    ? `All countries (${availableCountries.length})`
-                    : selectedCountries.length > 0
-                      ? `${selectedCountries.length} selected`
-                      : 'Select countries...'}
-                </span>
-                <svg
-                  className={`h-5 w-5 text-gray-400 shrink-0 ${showCountryDropdown ? 'rotate-180' : ''}`}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              {showCountryDropdown && (
-                <div
-                  className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-56 overflow-y-auto"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="p-2 border-b border-gray-100">
-                    <label className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectAllCountries}
-                        onChange={(e) => {
-                          setSelectAllCountries(e.target.checked)
-                          if (e.target.checked) setSelectedCountries([])
-                          else setSelectedCountries(['US'])
-                        }}
-                        className="h-4 w-4 text-indigo-600 rounded border-gray-300"
-                      />
-                      <span className="ml-2 text-sm font-medium text-gray-900">Select all</span>
-                    </label>
-                  </div>
-                  <div className="p-2 max-h-48 overflow-y-auto">
-                    {availableCountries.length === 0 ? (
-                      <p className="text-sm text-gray-500 py-2 text-center">Loading...</p>
-                    ) : (
-                      availableCountries.map((country) => (
-                        <label
-                          key={country.code}
-                          className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectAllCountries || selectedCountries.includes(country.code)}
-                            onChange={(e) => {
-                              if (selectAllCountries) return
-                              if (e.target.checked) setSelectedCountries([...selectedCountries, country.code])
-                              else setSelectedCountries(selectedCountries.filter((c) => c !== country.code))
-                            }}
-                            disabled={selectAllCountries}
-                            className="h-4 w-4 text-indigo-600 rounded border-gray-300"
-                          />
-                          <span className="ml-2 text-sm text-gray-900">{country.name}</span>
-                          <span className="ml-1 text-xs text-gray-500">({country.code})</span>
-                        </label>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-              <p className="text-xs text-gray-500 mt-1">
-                {selectAllCountries ? 'All countries' : `${selectedCountries.length} selected`}
-                {!selectAllCountries && selectedCountries.length > 0 && ` · ${availableLocations.length} locations`}
-              </p>
-            </div>
-          </div>
           <div>
             <div className="flex items-center gap-3 mb-3">
               <Toggle checked={includeLocation} onChange={setIncludeLocation} />
               <h3 className="text-sm font-medium text-gray-700">Include location</h3>
             </div>
-            <p className="text-xs text-gray-500 mb-3">Include address & locale on generated profiles.</p>
+            <p className="text-sm text-gray-500 mb-3">Address and locale will be randomly generated from selected country/countries.</p>
             {includeLocation && (
               count === 1 ? (
                 <div className="mt-4 space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Pick a location (optional)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Pick a location (leave blank to auto generate)</label>
                     <select
                       value={selectedLocationId}
                       onChange={(e) => setSelectedLocationId(e.target.value)}
@@ -1140,19 +1285,10 @@ export default function GenerateProfilesTab() {
                     ))}
                   </div>
                 </div>
-              ) : (
-                <p className="mt-2 text-sm text-gray-500">Locations will be randomly chosen from selected countries (address, phone, locale kept consistent).</p>
-              )
+              ) : null
             )}
           </div>
         </div>
-      </div>
-
-      {/* Future: catalog-linked properties & locations per use case — note for product */}
-      <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 px-4 py-3">
-        <p className="text-sm text-indigo-800">
-          <span className="font-medium">Planned:</span> Profile properties linked to Data Catalog (products, services, subscriptions, favourite store). Locations configurable per use case and by countries from the app&apos;s countries section.
-        </p>
       </div>
 
       {/* 4. Custom Properties */}
@@ -1163,66 +1299,93 @@ export default function GenerateProfilesTab() {
               <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white text-sm font-bold mr-3">4</span>
               Custom properties
             </h2>
-            <p className="text-sm text-gray-500 mt-1 ml-11">Include and optionally set values for profile properties.</p>
+            <p className="text-sm text-gray-500 mt-1 ml-11">Properties and their default settings (types, catalog, ranges) are defined in the Configure tab. Single profile: select values or use Generate to fill with random. Multiple profiles: values are generated randomly from catalog, ranges, and defaults.</p>
           </div>
           <button type="button" onClick={toggleAllProperties} className="text-sm font-medium text-indigo-600 hover:text-indigo-800">
             {Object.values(selectedProperties).every((v) => v) ? 'Deselect all' : 'Select all'}
           </button>
         </div>
-        <div className="p-6 border border-t-0 border-gray-200 rounded-b-lg bg-gray-50/30">
+        <div className="p-6 border border-t-0 border-gray-200 rounded-b-lg">
           {availableProperties.length === 0 ? (
             <p className="text-sm text-gray-500 text-center py-2">No properties available. Configure properties first.</p>
-          ) : (
-            <div className="space-y-4">
-              {availableProperties.map((property) => (
-                <div key={property.name} className="bg-white p-4 rounded border">
-                  <label className="flex items-start space-x-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedProperties[property.name] || false}
-                      onChange={() => toggleProperty(property.name)}
-                      className="mt-1 w-4 h-4"
-                    />
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2 mb-2">
-                        <span className="text-base font-medium text-gray-900">{property.name}</span>
-                        <span className="text-sm text-gray-500">({property.type})</span>
+          ) : (() => {
+            const grouped = groupProperties(availableProperties)
+            const currentProps = activePropertyGroupId === 'all' ? availableProperties : (grouped.find((g) => g.groupId === activePropertyGroupId) || { properties: [] }).properties
+            const navItems = [{ id: 'all', label: 'All properties' }, ...grouped.map((g) => ({ id: g.groupId, label: g.label }))]
+            const mid = Math.ceil(currentProps.length / 2)
+            const leftProps = currentProps.slice(0, mid)
+            const rightProps = currentProps.slice(mid)
+            const renderPropertyCard = (property) => (
+                <div key={property.name} className="border border-gray-200 rounded-lg p-3">
+                  <div className="flex items-start justify-between gap-2 mb-1.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-medium text-gray-900">{property.name}</span>
+                        <span className="text-xs text-gray-500">({property.type})</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 mt-1.5">
                         {property.catalog_source && (
-                          <span className="px-2 py-1 text-sm font-medium bg-green-100 text-green-800 rounded">
+                          <span className="px-1.5 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded">
                             {property.catalog_source}
                           </span>
                         )}
                         {property.required && (
-                          <span className="px-2 py-1 text-sm font-medium bg-red-100 text-red-800 rounded">
+                          <span className="px-1.5 py-0.5 text-xs font-medium bg-red-100 text-red-800 rounded">
                             Required
                           </span>
                         )}
                       </div>
-                      {property.description && (
-                        <p className="text-sm text-gray-500 mb-3">{property.description}</p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {count === 1 && selectedProperties[property.name] && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const v = getOneGeneratedPropertyValue(property, null, null)
+                            if (v !== null && v !== undefined) updatePropertyValue(property.name, v)
+                          }}
+                          className="text-xs font-medium text-indigo-600 hover:text-indigo-800 whitespace-nowrap"
+                        >
+                          Generate
+                        </button>
                       )}
-                      {selectedProperties[property.name] && (
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={selectedProperties[property.name] || false}
+                        onClick={() => toggleProperty(property.name)}
+                        className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${(selectedProperties[property.name] || false) ? 'bg-indigo-600' : 'bg-gray-200'}`}
+                      >
+                        <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${(selectedProperties[property.name] || false) ? 'translate-x-5' : 'translate-x-0'}`} />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    {selectedProperties[property.name] && (
                         <div className="mt-2">
+                          {count > 1 ? (
+                            <p className="text-xs text-gray-500">Random value will be generated from catalog, ranges, or defaults.</p>
+                          ) : (
+                          <>
                           {property.catalog_source ? (
                             (() => {
-                              let catalogItems = []
-                              let displayField = 'name'
-                              
-                              if (property.catalog_source === 'products') {
-                                catalogItems = catalogData.products || []
-                                displayField = property.object_property_mapping || 'name'
-                              } else if (property.catalog_source === 'stores' || property.catalog_source === 'locations') {
-                                catalogItems = catalogData.locations || []
-                                displayField = property.object_property_mapping || 'name'
-                              } else if (property.catalog_source === 'loyalty') {
-                                if (catalogData.loyalty && catalogData.loyalty.tiers) {
-                                  catalogItems = catalogData.loyalty.tiers
-                                  displayField = property.object_property_mapping || 'name'
-                                }
-                              } else if (property.catalog_source === 'reservations') {
-                                catalogItems = catalogData.reservations || []
-                                displayField = property.object_property_mapping || 'name'
+                              const source = property.catalog_source === 'stores' ? 'locations' : property.catalog_source
+                              if (source === 'products' || source === 'services' || source === 'subscriptions') {
+                                return (
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">Enter value manually:</label>
+                                    <input
+                                      type="text"
+                                      value={propertyValues[property.name] || ''}
+                                      onChange={(e) => updatePropertyValue(property.name, e.target.value)}
+                                      placeholder="Enter value"
+                                      className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                                    />
+                                  </div>
+                                )
                               }
+                              const catalogItems = getCatalogItemsForSource(source, catalogData, true)
+                              const displayField = property.object_property_mapping || 'name'
                               
                               if (catalogItems.length > 0) {
                                 if (property.type === 'array') {
@@ -1231,24 +1394,24 @@ export default function GenerateProfilesTab() {
                                   
                                   return (
                                     <div className="relative" data-multiselect>
-                                      <label className="block text-sm font-medium text-gray-700 mb-2">Select values (multiple):</label>
+                                      <label className="block text-xs font-medium text-gray-700 mb-1">Select values (multiple):</label>
                                       <button
                                         type="button"
                                         onClick={() => toggleMultiSelect(property.name)}
-                                        className="w-full px-3 py-2 text-left border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white flex justify-between items-center"
+                                        className="w-full px-2 py-1.5 text-left border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white flex justify-between items-center text-sm"
                                       >
-                                        <span className="text-base text-gray-700">
+                                        <span className="text-sm text-gray-700">
                                           {selectedValues.length > 0 
                                             ? `${selectedValues.length} selected` 
                                             : 'Select options...'}
                                         </span>
-                                        <svg className={`h-5 w-5 text-gray-400 transition-transform ${isOpen ? 'transform rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <svg className={`h-4 w-4 text-gray-400 transition-transform ${isOpen ? 'transform rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                                         </svg>
                                       </button>
                                       {isOpen && (
-                                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-64 overflow-y-auto">
-                                          <div className="p-2">
+                                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-56 overflow-y-auto">
+                                          <div className="p-1.5">
                                             {catalogItems.map((item) => {
                                               const value = item[displayField] || item.id || item.name
                                               const label = item[displayField] || item.name || item.id
@@ -1257,15 +1420,15 @@ export default function GenerateProfilesTab() {
                                               return (
                                                 <label
                                                   key={item.id || value}
-                                                  className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer"
+                                                  className="flex items-center p-1.5 hover:bg-gray-50 rounded cursor-pointer"
                                                 >
                                                   <input
                                                     type="checkbox"
                                                     checked={isChecked}
                                                     onChange={(e) => handleMultiSelectChange(property.name, value, e.target.checked)}
-                                                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                                                    className="w-3.5 h-3.5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
                                                   />
-                                                  <span className="ml-3 text-base text-gray-900">{label}</span>
+                                                  <span className="ml-2 text-sm text-gray-900">{label}</span>
                                                 </label>
                                               )
                                             })}
@@ -1273,11 +1436,11 @@ export default function GenerateProfilesTab() {
                                         </div>
                                       )}
                                       {selectedValues.length > 0 && (
-                                        <div className="mt-3 flex flex-wrap gap-2">
+                                        <div className="mt-2 flex flex-wrap gap-1.5">
                                           {selectedValues.map((selected) => (
                                             <span
                                               key={selected}
-                                              className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-indigo-100 text-indigo-800"
+                                              className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800"
                                             >
                                               {selected}
                                               <button
@@ -1297,28 +1460,43 @@ export default function GenerateProfilesTab() {
                                     </div>
                                   )
                                 } else {
+                                  const catalogValues = catalogItems.map((item) => item[displayField] || item.id || item.name)
+                                  const currentVal = propertyValues[property.name] || ''
+                                  const fromCatalog = catalogValues.includes(currentVal)
                                   return (
-                                    <div>
-                                      <label className="block text-sm font-medium text-gray-700 mb-2">Select value:</label>
-                                      <select
-                                        value={propertyValues[property.name] || ''}
-                                        onChange={(e) => updatePropertyValue(property.name, e.target.value)}
-                                        className="w-full px-3 py-2 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                                      >
-                                        <option value="">Select {property.name} (optional - will generate if empty)</option>
-                                        {catalogItems.map((item) => {
-                                          const value = item[displayField] || item.id || item.name
-                                          const label = item[displayField] || item.name || item.id
-                                          return (
-                                            <option key={item.id || value} value={value}>{label}</option>
-                                          )
-                                        })}
-                                      </select>
+                                    <div className="space-y-2">
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-700 mb-1">Select from catalog or enter manually:</label>
+                                        <select
+                                          value={fromCatalog ? currentVal : ''}
+                                          onChange={(e) => updatePropertyValue(property.name, e.target.value)}
+                                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                                        >
+                                          <option value="">Select (optional)</option>
+                                          {catalogItems.map((item) => {
+                                            const value = item[displayField] || item.id || item.name
+                                            const label = item[displayField] || item.name || item.id
+                                            return (
+                                              <option key={item.id || value} value={value}>{label}</option>
+                                            )
+                                          })}
+                                        </select>
+                                      </div>
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-500 mb-1">Or enter value manually:</label>
+                                        <input
+                                          type="text"
+                                          value={!fromCatalog ? currentVal : ''}
+                                          onChange={(e) => updatePropertyValue(property.name, e.target.value)}
+                                          placeholder="Type a value"
+                                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                                        />
+                                      </div>
                                     </div>
                                   )
                                 }
                               }
-                              return <p className="text-sm text-gray-500">No {property.catalog_source} data available</p>
+                              return <p className="text-sm text-gray-500">No {property.catalog_source} data available. Add items in Data Catalog or use default template in Configure.</p>
                             })()
                           ) : property.type === 'array' && property.options && property.options.length > 0 ? (
                             (() => {
@@ -1327,39 +1505,39 @@ export default function GenerateProfilesTab() {
                               
                               return (
                                 <div className="relative" data-multiselect>
-                                  <label className="block text-sm font-medium text-gray-700 mb-2">Select values (multiple):</label>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Select values (multiple):</label>
                                   <button
                                     type="button"
                                     onClick={() => toggleMultiSelect(property.name)}
-                                    className="w-full px-3 py-2 text-left border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white flex justify-between items-center"
+                                    className="w-full px-2 py-1.5 text-left border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white flex justify-between items-center text-sm"
                                   >
-                                    <span className="text-base text-gray-700">
+                                    <span className="text-sm text-gray-700">
                                       {selectedValues.length > 0 
                                         ? `${selectedValues.length} selected` 
                                         : 'Select options...'}
                                     </span>
-                                    <svg className={`h-5 w-5 text-gray-400 transition-transform ${isOpen ? 'transform rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <svg className={`h-4 w-4 text-gray-400 transition-transform ${isOpen ? 'transform rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                                     </svg>
                                   </button>
                                   {isOpen && (
-                                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-64 overflow-y-auto">
-                                      <div className="p-2">
+                                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-56 overflow-y-auto">
+                                      <div className="p-1.5">
                                         {property.options.map((option) => {
                                           const isChecked = selectedValues.includes(option)
                                           
                                           return (
                                             <label
                                               key={option}
-                                              className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer"
+                                              className="flex items-center p-1.5 hover:bg-gray-50 rounded cursor-pointer"
                                             >
                                               <input
                                                 type="checkbox"
                                                 checked={isChecked}
                                                 onChange={(e) => handleMultiSelectChange(property.name, option, e.target.checked)}
-                                                className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                                                className="w-3.5 h-3.5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
                                               />
-                                              <span className="ml-3 text-base text-gray-900">{option}</span>
+                                              <span className="ml-2 text-sm text-gray-900">{option}</span>
                                             </label>
                                           )
                                         })}
@@ -1367,11 +1545,11 @@ export default function GenerateProfilesTab() {
                                     </div>
                                   )}
                                   {selectedValues.length > 0 && (
-                                    <div className="mt-3 flex flex-wrap gap-2">
+                                    <div className="mt-2 flex flex-wrap gap-1.5">
                                       {selectedValues.map((selected) => (
                                         <span
                                           key={selected}
-                                          className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-indigo-100 text-indigo-800"
+                                          className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800"
                                         >
                                           {selected}
                                           <button
@@ -1393,11 +1571,11 @@ export default function GenerateProfilesTab() {
                             })()
                           ) : property.options && property.options.length > 0 ? (
                             <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">Select value:</label>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">Select value:</label>
                               <select
                                 value={propertyValues[property.name] || ''}
                                 onChange={(e) => updatePropertyValue(property.name, e.target.value)}
-                                className="w-full px-3 py-2 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
                               >
                                 <option value="">Select {property.name} (optional - will generate if empty)</option>
                                 {property.options.map((option) => (
@@ -1407,48 +1585,74 @@ export default function GenerateProfilesTab() {
                             </div>
                           ) : property.type === 'date' ? (
                             <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">Select date:</label>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">Select date:</label>
                               <input
                                 type="date"
                                 value={propertyValues[property.name] || ''}
                                 onChange={(e) => updatePropertyValue(property.name, e.target.value)}
-                                className="w-full px-3 py-2 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
                               />
                             </div>
                           ) : property.type === 'boolean' ? (
                             <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">Select value:</label>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">Select value:</label>
                               <select
                                 value={propertyValues[property.name] !== undefined ? String(propertyValues[property.name]) : ''}
                                 onChange={(e) => updatePropertyValue(property.name, e.target.value === 'true')}
-                                className="w-full px-3 py-2 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
                               >
                                 <option value="">Select (optional - will generate if empty)</option>
                                 <option value="true">True</option>
                                 <option value="false">False</option>
                               </select>
                             </div>
-                          ) : count === 1 ? (
+                          ) : (
                             <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">Enter value:</label>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">Enter value:</label>
                               <input
                                 type={property.type === 'integer' || property.type === 'decimal' ? 'number' : 'text'}
                                 step={property.type === 'decimal' ? '0.01' : undefined}
                                 value={propertyValues[property.name] || ''}
                                 onChange={(e) => updatePropertyValue(property.name, e.target.value)}
                                 placeholder={`Enter ${property.name} (optional - will generate if empty)`}
-                                className="w-full px-3 py-2 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
                               />
                             </div>
-                          ) : null}
+                          )}
+                          </>
+                          )}
                         </div>
                       )}
-                    </div>
-                  </label>
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
+            )
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_2fr_2fr] gap-0 min-h-0">
+                <aside className="md:min-w-0 border-b md:border-b-0 md:border-r border-gray-200 flex-shrink-0 p-2">
+                  <nav className="flex md:flex-col gap-0 overflow-x-auto md:overflow-x-visible md:overflow-y-auto" aria-label="Property categories">
+                    {navItems.map(({ id, label }) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setActivePropertyGroupId(id)}
+                        className={`w-full text-left py-2.5 px-3 rounded-md text-sm font-medium whitespace-nowrap ${
+                          activePropertyGroupId === id ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </nav>
+                </aside>
+                <div className="min-w-0 p-2 overflow-auto space-y-3">
+                  {leftProps.map(renderPropertyCard)}
+                </div>
+                <div className="min-w-0 p-2 overflow-auto space-y-3">
+                  {rightProps.map(renderPropertyCard)}
+                </div>
+              </div>
+            )
+          })()}
         </div>
       </div>
 

@@ -2,6 +2,8 @@
 
 Mock API endpoints for the K:Dummy application. These endpoints simulate the Klaviyo Client API behavior.
 
+**Payload rules:** When sending profiles or events, only include properties that have a value. Do not pass `null`, empty string, or omit keys when the value is absent. See `docs/klaviyo-client-api.md` § **Payload rules (omit empty / null)** for full details.
+
 ## Base URL
 
 All endpoints are available at: `http://localhost:3000/api`
@@ -65,7 +67,7 @@ Creates a new profile with identifiers, Klaviyo properties, location, and custom
         "birthday": "1990-05-15",
         "loyalty_member": true,
         "loyalty_points": 1250,
-        "kdummy_generated_at": "2024-01-15T10:30:00Z"
+        "kd_generated_at": "2024-01-15T10:30:00Z"
       },
       "created": "2024-01-15T10:30:00Z",
       "updated": "2024-01-15T10:30:00Z"
@@ -93,7 +95,7 @@ Retrieves a paginated list of profiles.
 #### Create Event
 **POST** `/api/events`
 
-Creates a new event with metric, profile, properties, time, and optional value.
+Creates a new event by forwarding the request to the Klaviyo Client API (`/client/events`). The event is also stored locally for listing via GET. Requires metric, profile (with at least one identifier), properties, time, and optional value.
 
 **Request Body:**
 ```json
@@ -143,7 +145,7 @@ Creates a new event with metric, profile, properties, time, and optional value.
         "data": {
           "type": "metric",
           "attributes": {
-            "name": "TEST Viewed Product"
+            "name": "Viewed Product (KD)"
           }
         }
       },
@@ -158,9 +160,9 @@ Creates a new event with metric, profile, properties, time, and optional value.
 ```
 
 **Notes:**
-- Metric names are automatically prefixed with "TEST " if not already present
-- If `time` is not provided, current timestamp is used
-- `value` is optional but recommended for revenue-related events
+- Events are sent to Klaviyo's Client API; metric names from the app's event generator end with ` (KD)` (e.g. "Placed Order (KD)").
+- If `time` is not provided, current timestamp is used.
+- `value` is optional but recommended for revenue-related events.
 
 **Validation:**
 - Metric is required
@@ -326,7 +328,7 @@ All endpoints return errors in the following format:
 
 - All data is stored in-memory and will be lost on server restart
 - Profile IDs, Event IDs, and Subscription IDs are auto-generated
-- All profiles created through this API include `kdummy_generated_at` (ISO timestamp) in their properties
+- All profiles created through this API include `kd_generated_at` (ISO timestamp) in their properties
 - Metric names are automatically prefixed with "TEST " if not already present
 - All timestamps are in ISO 8601 format
 

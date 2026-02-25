@@ -6,8 +6,9 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Navigation from '@/components/Navigation'
 import { JOURNEYS, getJourneyById, getUniqueEventNamesForJourney, getJourneysByType, getJourneyIdFromTypeAndVariant, isProductJourneyType } from '@/src/lib/events/journeyDefinitions'
 import { getEventDescription } from '@/src/lib/events/eventDefinitions'
-import { generateEvents } from '@/src/lib/events/generateEvents'
+import { generateEvents, getProfileEmailAndName } from '@/src/lib/events/generateEvents'
 import { buildSampleEventProperties } from '@/src/lib/events/eventPropertiesSchema'
+import { samplePropertiesToKlaviyoEventPayload, buildKlaviyoEventPayload } from '@/lib/klaviyoPayloads'
 import { getTimingProfile, TIMING_PROFILES } from '@/src/lib/events/journeyTimings'
 import { loadCatalog } from '@/src/catalog/storage'
 import { getBusinessTypesByTemplate, getBusinessTypeById, getCatalogItemsFromBusinessType } from '@/src/catalog/businessTypes'
@@ -88,10 +89,10 @@ export default function EventsPage() {
   const [journeyCount, setJourneyCount] = useState(1)
   const [profilesCount, setProfilesCount] = useState(5)
   const [dateRange, setDateRange] = useState('12months')
-  const [dataSourceProducts, setDataSourceProducts] = useState(DATA_SOURCE_CATALOG)
+  const [dataSourceProducts, setDataSourceProducts] = useState(DATA_SOURCE_INDUSTRY)
   const [dataSourceServices, setDataSourceServices] = useState(DATA_SOURCE_CATALOG)
   const [dataSourceSubscriptions, setDataSourceSubscriptions] = useState(DATA_SOURCE_CATALOG)
-  const [industryProducts, setIndustryProducts] = useState('')
+  const [industryProducts, setIndustryProducts] = useState('apparel')
   const [industryServices, setIndustryServices] = useState('')
   const [industrySubscriptions, setIndustrySubscriptions] = useState('')
   const [selectedProductIds, setSelectedProductIds] = useState([])
@@ -100,6 +101,7 @@ export default function EventsPage() {
   const [runHistory, setRunHistory] = useState([])
   const [selectedJobIds, setSelectedJobIds] = useState(new Set())
   const [catalogFromStorage, setCatalogFromStorage] = useState({ products: [], services: [], subscriptions: [] })
+  const [catalogLocations, setCatalogLocations] = useState([])
   const [previewEventName, setPreviewEventName] = useState(null)
   const [previewExampleIndex, setPreviewExampleIndex] = useState(0)
   const [multiSelectOpen, setMultiSelectOpen] = useState(null)
@@ -114,6 +116,7 @@ export default function EventsPage() {
     router.replace(`/events?tab=${tab}`)
   }, [router])
   const [generateStep, setGenerateStep] = useState('setup') // 'setup' | 'confirm'
+  const [sendingToKlaviyo, setSendingToKlaviyo] = useState(false)
   const linearDefaults = getTimingProfile('ecommerce_linear') || TIMING_PROFILES.ecommerce_linear
   const [timingStepMin, setTimingStepMin] = useState(linearDefaults?.stepMinutesMin ?? 2)
   const [timingStepMax, setTimingStepMax] = useState(linearDefaults?.stepMinutesMax ?? 10)
@@ -144,13 +147,14 @@ export default function EventsPage() {
     industrySubscriptions
   )
 
-  const catalog = filterCatalogBySelectedIds(
+  const filteredCatalog = filterCatalogBySelectedIds(
     fullCatalog,
     selectedProductIds,
     selectedServiceIds,
     selectedSubscriptionIds,
     journeyType
   )
+  const catalog = { ...filteredCatalog, locations: catalogLocations }
 
   const needsProducts = isProductJourneyType(journeyType)
   const needsServices = journeyType === 'booking'
@@ -188,6 +192,18 @@ export default function EventsPage() {
       services: loadCatalog('service'),
       subscriptions: loadCatalog('subscription'),
     })
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!getActiveApiKey()) return
+    apiClient.getDataCatalog()
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled && data?.data?.locations) setCatalogLocations(Array.isArray(data.data.locations) ? data.data.locations : [])
+      })
+      .catch(() => { if (!cancelled) setCatalogLocations([]) })
+    return () => { cancelled = true }
   }, [])
 
   useEffect(() => {
@@ -318,7 +334,7 @@ export default function EventsPage() {
     }
   }, [profileMode, loadProfiles])
 
-  const handleGenerate = useCallback(() => {
+  const handleGenerate = useCallback(async () => {
     const timingOverrides = journey?.timingProfile === 'ecommerce_linear'
       ? { stepMinutesMin: timingStepMin, stepMinutesMax: Math.max(timingStepMin, timingStepMax) }
       : undefined
@@ -368,6 +384,37 @@ export default function EventsPage() {
       saveRunHistory(next)
       return next
     })
+
+    // Send all events to Klaviyo by default (via /api/events which forwards to Klaviyo Client API)
+    if (result.events.length > 0) {
+      setSendingToKlaviyo(true)
+      let sent = 0
+      let failed = 0
+      try {
+        for (const ev of result.events) {
+          try {
+            const payload = buildKlaviyoEventPayload(ev)
+            const res = await apiClient.createEvent(payload.data)
+            if (res.ok) sent++
+            else failed++
+          } catch {
+            failed++
+          }
+        }
+        if (failed === 0) {
+          // Optional: could show a brief success toast instead of alert for large runs
+          if (result.events.length <= 10) {
+            alert(`Generated ${result.events.length} event(s) and sent to Klaviyo.`)
+          }
+        } else {
+          alert(`Generated ${result.events.length} event(s). Sent ${sent} to Klaviyo. ${failed} failed.`)
+        }
+      } catch (e) {
+        alert(`Generated ${result.events.length} event(s) but sending to Klaviyo failed: ${e?.message || 'Unknown error'}.`)
+      } finally {
+        setSendingToKlaviyo(false)
+      }
+    }
   }, [selectedJourneyId, selectedEventNames, catalog, journeyCount, profilesCount, dateRange, journey?.timingProfile, timingStepMin, timingStepMax, profileMode, selectedProfileIds, availableProfiles, needsProducts, productsPerOrderMin, productsPerOrderMax])
 
   const previewCatalogKind = journeyType === 'booking' ? 'service' : journeyType === 'subscription' ? 'subscription' : 'product'
@@ -506,7 +553,7 @@ export default function EventsPage() {
               <div className="px-6 py-4 border-b border-gray-200 flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900">Run history</h2>
-                  <p className="text-sm text-gray-500 mt-1">Past event generation runs. Click a job to view details. All dummy events use the <code className="bg-gray-100 px-1 rounded text-xs">K:Dummy</code> prefix.</p>
+                  <p className="text-sm text-gray-500 mt-1">Past event generation runs. Click a job to view details. Events are sent to Klaviyo with the <code className="bg-gray-100 px-1 rounded text-xs">(KD)</code> metric suffix.</p>
                 </div>
                 {selectedJobIds.size > 0 && (
                   <button
@@ -592,57 +639,60 @@ export default function EventsPage() {
             {/* Configuration: only show when not on confirmation */}
             {generateStep !== 'confirm' && (
             <>
-            {/* Step 1: Journey type, variant & events in one container */}
+            {/* Step 1: Journey type (online / in-store / booking / subscription), variant, then events */}
             <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
               <div className="bg-gradient-to-r from-indigo-50 to-white px-6 py-4 border-b border-gray-200">
                 <h2 className="text-lg font-semibold text-gray-900">
                   <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white text-sm font-bold mr-3">1</span>
-                  Select journey & events
+                  Journey type & events
                 </h2>
-                <p className="text-sm text-gray-500 mt-1 ml-11">Choose journey type and variant, then which events to include (all selected by default).</p>
+                <p className="text-sm text-gray-500 mt-1 ml-11">Choose what type of journey (online, in-store, booking, or subscription), then which events to generate. In the next step you&apos;ll pick which items or industry template to use.</p>
               </div>
               <div className="p-6">
-                <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_2fr] gap-6">
-                  <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-4">
-                    <h3 className="text-sm font-medium text-gray-700 mb-2">Journey type</h3>
-                    <ul className="space-y-1" role="listbox" aria-label="Journey type">
+                <div className="flex flex-col md:flex-row gap-0 min-h-0">
+                  <aside className="md:w-1/4 md:min-w-0 border-b md:border-b-0 md:border-r border-gray-200 bg-gray-50/50 flex-shrink-0 p-2">
+                    <h3 className="text-sm font-medium text-gray-700 mb-2 px-1">Journey type</h3>
+                    <nav className="flex md:flex-col gap-0 overflow-x-auto md:overflow-x-visible" aria-label="Journey type">
                       {JOURNEY_TYPES.map((t) => (
-                        <li key={t.value}>
-                          <button
-                            type="button"
-                            role="option"
-                            aria-selected={journeyType === t.value}
-                            onClick={() => setJourneyType(t.value)}
-                            className={`w-full text-left px-3 py-2.5 text-sm font-medium rounded-md transition-colors ${journeyType === t.value ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-700 hover:bg-gray-200'}`}
-                          >
-                            {t.label}
-                          </button>
-                        </li>
+                        <button
+                          key={t.value}
+                          type="button"
+                          role="option"
+                          aria-selected={journeyType === t.value}
+                          onClick={() => setJourneyType(t.value)}
+                          className={`w-full text-left py-2.5 px-3 rounded-md text-sm font-medium whitespace-nowrap ${
+                            journeyType === t.value ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                          }`}
+                        >
+                          {t.label}
+                        </button>
                       ))}
-                    </ul>
-                  </div>
-                  <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-4">
-                    <h3 className="text-sm font-medium text-gray-700 mb-2">Journey variant</h3>
-                    <ul className="space-y-1" role="listbox" aria-label="Journey variant">
+                    </nav>
+                  </aside>
+                  <aside className="md:w-1/4 md:min-w-0 border-b md:border-b-0 md:border-r border-gray-200 bg-gray-50/50 flex-shrink-0 p-2">
+                    <h3 className="text-sm font-medium text-gray-700 mb-2 px-1">Variant</h3>
+                    <nav className="flex md:flex-col gap-0 overflow-x-auto md:overflow-x-visible" aria-label="Journey variant">
                       {journeysOfType.map((j) => (
-                        <li key={j.id}>
-                          <button
-                            type="button"
-                            role="option"
-                            aria-selected={journeyVariant === j.variant}
-                            onClick={() => setJourneyVariant(j.variant)}
-                            className={`w-full text-left px-3 py-2.5 text-sm font-medium rounded-md transition-colors ${journeyVariant === j.variant ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-700 hover:bg-gray-200'}`}
-                          >
-                            {j.name.includes(' — ') ? j.name.split(' — ')[1] : j.variant}
-                          </button>
-                        </li>
+                        <button
+                          key={j.id}
+                          type="button"
+                          role="option"
+                          aria-selected={journeyVariant === j.variant}
+                          onClick={() => setJourneyVariant(j.variant)}
+                          className={`w-full text-left py-2.5 px-3 rounded-md text-sm font-medium whitespace-nowrap ${
+                            journeyVariant === j.variant ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                          }`}
+                        >
+                          {j.name.includes(' — ') ? j.name.split(' — ')[1] : j.variant}
+                        </button>
                       ))}
-                    </ul>
-                  </div>
-                  <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-4 min-w-0">
+                    </nav>
+                  </aside>
+                  <div className="md:w-2/4 min-w-0 p-4 overflow-auto">
                     {journey && (
                       <>
-                        <h3 className="text-sm font-medium text-gray-700 mb-2">Events in this journey</h3>
+                        <h3 className="text-sm font-medium text-gray-700 mb-2">Events</h3>
+                        <p className="text-xs text-gray-500 mb-2">Check or uncheck events. Order is fixed for a sensible story.</p>
                         <div className="flex gap-2 mb-2">
                           <button type="button" onClick={selectAllEvents} className="text-xs font-medium text-indigo-600 hover:text-indigo-800">Select all</button>
                           <span className="text-gray-300">|</span>
@@ -651,13 +701,12 @@ export default function EventsPage() {
                         <ul className="space-y-1.5 pr-1">
                           {availableEventNames.map((name, idx) => (
                             <li key={name}>
-                              <label className={`flex items-start gap-3 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${selectedEventNames.includes(name) ? 'border-indigo-200 bg-indigo-50/50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                              <label className={`flex items-start gap-3 rounded-md border px-3 py-2 cursor-pointer transition-colors ${selectedEventNames.includes(name) ? 'border-indigo-200 bg-indigo-100' : 'border-gray-200 hover:bg-gray-100'}`}>
                                 <input type="checkbox" checked={selectedEventNames.includes(name)} onChange={() => toggleEvent(name)} className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
                                 <span className="text-sm">
                                   <span className="font-medium text-gray-900">{name}</span>
                                   {getEventDescription(name) && <span className="text-gray-500 block text-xs mt-0.5">{getEventDescription(name)}</span>}
                                 </span>
-                                <span className="ml-auto text-xs text-gray-400 font-mono">{idx + 1}</span>
                               </label>
                             </li>
                           ))}
@@ -688,58 +737,79 @@ export default function EventsPage() {
                     <div>
                       <h3 className="text-sm font-semibold text-gray-900 mb-1">Where should item data come from?</h3>
                       <p className="text-xs text-gray-500 mb-3">Generated events will reference items from one of these sources.</p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (needsProducts) { setDataSourceProducts(DATA_SOURCE_CATALOG); setIndustryProducts('') }
-                            if (needsServices) { setDataSourceServices(DATA_SOURCE_CATALOG); setIndustryServices('') }
-                            if (needsSubscriptions) { setDataSourceSubscriptions(DATA_SOURCE_CATALOG); setIndustrySubscriptions('') }
-                          }}
-                          className={`rounded-xl border-2 p-4 text-left transition-colors ${(needsProducts && dataSourceProducts === DATA_SOURCE_CATALOG) || (needsServices && dataSourceServices === DATA_SOURCE_CATALOG) || (needsSubscriptions && dataSourceSubscriptions === DATA_SOURCE_CATALOG) ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'}`}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
+                        <div
+                          className={`rounded-xl border-2 p-4 text-left transition-colors flex flex-col min-h-[152px] ${(needsProducts && dataSourceProducts === DATA_SOURCE_INDUSTRY) || (needsServices && dataSourceServices === DATA_SOURCE_INDUSTRY) || (needsSubscriptions && dataSourceSubscriptions === DATA_SOURCE_INDUSTRY) ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'}`}
                         >
-                          <span className="block font-medium text-gray-900">Data Catalog</span>
-                          <span className="block text-xs text-gray-500 mt-1">Use items you’ve added in the <Link href="/catalog" className="text-indigo-600 hover:text-indigo-800">Data Catalog</Link></span>
-                          {needsProducts && <span className="block text-xs text-gray-500 mt-1">{catalogFromStorage.products.length} products available</span>}
-                          {needsServices && <span className="block text-xs text-gray-500 mt-1">{catalogFromStorage.services.length} services available</span>}
-                          {needsSubscriptions && <span className="block text-xs text-gray-500 mt-1">{catalogFromStorage.subscriptions.length} subscriptions available</span>}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (needsProducts) setDataSourceProducts(DATA_SOURCE_INDUSTRY)
-                            if (needsServices) setDataSourceServices(DATA_SOURCE_INDUSTRY)
-                            if (needsSubscriptions) setDataSourceSubscriptions(DATA_SOURCE_INDUSTRY)
-                          }}
-                          className={`rounded-xl border-2 p-4 text-left transition-colors ${(needsProducts && dataSourceProducts === DATA_SOURCE_INDUSTRY) || (needsServices && dataSourceServices === DATA_SOURCE_INDUSTRY) || (needsSubscriptions && dataSourceSubscriptions === DATA_SOURCE_INDUSTRY) ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'}`}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (needsProducts) setDataSourceProducts(DATA_SOURCE_INDUSTRY)
+                              if (needsServices) setDataSourceServices(DATA_SOURCE_INDUSTRY)
+                              if (needsSubscriptions) setDataSourceSubscriptions(DATA_SOURCE_INDUSTRY)
+                            }}
+                            className="w-full text-left flex-1 min-h-0"
+                          >
+                            <span className="block font-medium text-gray-900">Default template</span>
+                            <span className="block text-xs text-gray-500 mt-1">Use sample items from an industry template (no catalog setup needed)</span>
+                          </button>
+                          <div className="mt-3 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <select
+                              id="catalog-template-select"
+                              aria-label="Which template"
+                              value={needsProducts ? industryProducts : needsServices ? industryServices : industrySubscriptions}
+                              onChange={(e) => {
+                                if (needsProducts) setIndustryProducts(e.target.value)
+                                if (needsServices) setIndustryServices(e.target.value)
+                                if (needsSubscriptions) setIndustrySubscriptions(e.target.value)
+                              }}
+                              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                            >
+                              <option value="">Select a template</option>
+                              {needsProducts && productBusinessTypes.map((bt) => <option key={bt.id} value={bt.id}>{bt.label}</option>)}
+                              {needsServices && serviceBusinessTypes.map((bt) => <option key={bt.id} value={bt.id}>{bt.label}</option>)}
+                              {needsSubscriptions && subscriptionBusinessTypes.map((bt) => <option key={bt.id} value={bt.id}>{bt.label}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        <div
+                          className={`rounded-xl border-2 p-4 text-left transition-colors flex flex-col min-h-[152px] ${(needsProducts && dataSourceProducts === DATA_SOURCE_CATALOG) || (needsServices && dataSourceServices === DATA_SOURCE_CATALOG) || (needsSubscriptions && dataSourceSubscriptions === DATA_SOURCE_CATALOG) ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'}`}
                         >
-                          <span className="block font-medium text-gray-900">Default template</span>
-                          <span className="block text-xs text-gray-500 mt-1">Use sample items from an industry template (no catalog setup needed)</span>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (needsProducts) { setDataSourceProducts(DATA_SOURCE_CATALOG); setIndustryProducts('') }
+                              if (needsServices) { setDataSourceServices(DATA_SOURCE_CATALOG); setIndustryServices('') }
+                              if (needsSubscriptions) { setDataSourceSubscriptions(DATA_SOURCE_CATALOG); setIndustrySubscriptions('') }
+                            }}
+                            className="w-full text-left flex-1 min-h-0"
+                          >
+                            <span className="block font-medium text-gray-900">Data Catalog</span>
+                            <span className="block text-xs text-gray-500 mt-1">Use items you’ve added in the <Link href="/catalog" className="text-indigo-600 hover:text-indigo-800" onClick={(e) => e.stopPropagation()}>Data Catalog</Link></span>
+                          </button>
+                          <div className="mt-3 flex-shrink-0 flex items-center gap-3 min-h-[38px] flex-wrap">
+                            {(needsProducts && dataSourceProducts === DATA_SOURCE_CATALOG) || (needsServices && dataSourceServices === DATA_SOURCE_CATALOG) || (needsSubscriptions && dataSourceSubscriptions === DATA_SOURCE_CATALOG) ? (
+                              <>
+                                {(() => {
+                                  const count = needsProducts ? catalogFromStorage.products.length : needsServices ? catalogFromStorage.services.length : catalogFromStorage.subscriptions.length
+                                  const label = needsProducts ? 'products' : needsServices ? 'services' : 'subscriptions'
+                                  return count > 0 ? <span className="text-xs text-gray-500">{count} {label} available</span> : null
+                                })()}
+                                <Link
+                                  href="/catalog"
+                                  className="inline-flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  Add Catalog Items
+                                </Link>
+                              </>
+                            ) : (
+                              <span className="text-xs text-gray-500 invisible">—</span>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
-
-                    {/* Step 2b: If template, which one? */}
-                    {((needsProducts && dataSourceProducts === DATA_SOURCE_INDUSTRY) || (needsServices && dataSourceServices === DATA_SOURCE_INDUSTRY) || (needsSubscriptions && dataSourceSubscriptions === DATA_SOURCE_INDUSTRY)) && (
-                      <div>
-                        <h3 className="text-sm font-semibold text-gray-900 mb-1">Which template?</h3>
-                        <p className="text-xs text-gray-500 mb-2">Pick an industry template to generate sample items.</p>
-                        <select
-                          value={needsProducts ? industryProducts : needsServices ? industryServices : industrySubscriptions}
-                          onChange={(e) => {
-                            if (needsProducts) setIndustryProducts(e.target.value)
-                            if (needsServices) setIndustryServices(e.target.value)
-                            if (needsSubscriptions) setIndustrySubscriptions(e.target.value)
-                          }}
-                          className="max-w-md rounded-md border border-gray-300 px-3 py-2 text-sm"
-                        >
-                          <option value="">Select a template</option>
-                          {needsProducts && productBusinessTypes.map((bt) => <option key={bt.id} value={bt.id}>{bt.label}</option>)}
-                          {needsServices && serviceBusinessTypes.map((bt) => <option key={bt.id} value={bt.id}>{bt.label}</option>)}
-                          {needsSubscriptions && subscriptionBusinessTypes.map((bt) => <option key={bt.id} value={bt.id}>{bt.label}</option>)}
-                        </select>
-                      </div>
-                    )}
                     </div>
 
                     {/* Right: item selection table (1/2) */}
@@ -773,11 +843,6 @@ export default function EventsPage() {
                             const kind = needsProducts ? 'product' : needsServices ? 'service' : 'subscription'
                             const selectedIds = needsProducts ? selectedProductIds : needsServices ? selectedServiceIds : selectedSubscriptionIds
                             const itemTypeLabel = (() => { try { return (getTemplate(kind)?.label ?? '').replace(/s$/, '') || (kind === 'product' ? 'Product' : kind === 'service' ? 'Service' : 'Subscription') } catch { return kind === 'product' ? 'Product' : kind === 'service' ? 'Service' : 'Subscription' } })()
-                            const industryLabel = needsProducts
-                              ? (dataSourceProducts === DATA_SOURCE_CATALOG ? 'Catalog' : (getBusinessTypeById(industryProducts)?.label ?? '—'))
-                              : needsServices
-                                ? (dataSourceServices === DATA_SOURCE_CATALOG ? 'Catalog' : (getBusinessTypeById(industryServices)?.label ?? '—'))
-                                : (dataSourceSubscriptions === DATA_SOURCE_CATALOG ? 'Catalog' : (getBusinessTypeById(industrySubscriptions)?.label ?? '—'))
                             if (items.length === 0) {
                               return (
                                 <p className="p-4 text-sm text-gray-500">
@@ -792,7 +857,6 @@ export default function EventsPage() {
                                     <th className="text-left py-2 px-4 font-semibold text-gray-700 w-8" scope="col" />
                                     <th className="text-left py-2 px-4 font-semibold text-gray-700" scope="col">Item name</th>
                                     <th className="text-left py-2 px-4 font-semibold text-gray-700" scope="col">Item type</th>
-                                    <th className="text-left py-2 px-4 font-semibold text-gray-700" scope="col">Industry</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -809,7 +873,6 @@ export default function EventsPage() {
                                       </td>
                                       <td className="py-2 px-4 font-medium text-gray-900">{item.name}</td>
                                       <td className="py-2 px-4 text-gray-600">{itemTypeLabel}</td>
-                                      <td className="py-2 px-4 text-gray-600">{industryLabel}</td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -838,6 +901,37 @@ export default function EventsPage() {
               </div>
               <div className="p-6">
                 <div className={`grid gap-4 grid-cols-1 sm:grid-cols-3`}>
+                  {needsProducts && journey && (
+                    <div className="rounded-lg border border-gray-200 bg-gray-50/30 p-4">
+                      <label className="block text-sm font-semibold text-gray-900 mb-2">Products per order</label>
+                      <p className="text-xs text-gray-500 mb-3">Min–max line items per order. One Viewed Product and one Added to Cart event per product.</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-600 w-7">Min</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={10}
+                            value={productsPerOrderMin}
+                            onChange={(e) => setProductsPerOrderMin(Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)))}
+                            className="w-14 rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-center"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-600 w-7">Max</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={10}
+                            value={productsPerOrderMax}
+                            onChange={(e) => setProductsPerOrderMax(Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)))}
+                            className="w-14 rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-center"
+                          />
+                        </div>
+                        <span className="text-xs text-gray-500">items per order</span>
+                      </div>
+                    </div>
+                  )}
                   <div className="rounded-lg border border-gray-200 bg-gray-50/30 p-4">
                     <label htmlFor="journeyCount" className="block text-sm font-semibold text-gray-900 mb-2">Journeys per profile</label>
                     <div className="flex items-center gap-2">
@@ -881,180 +975,189 @@ export default function EventsPage() {
                     </select>
                     <p className="text-xs text-gray-500 mt-2">When generated events will be dated</p>
                   </div>
-                  {needsProducts && journey && (
-                    <div className="rounded-lg border border-gray-200 bg-gray-50/30 p-4">
-                      <span className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Product run options</span>
-                      <label className="block text-sm font-semibold text-gray-900 mb-2">Products per order</label>
-                      <p className="text-xs text-gray-500 mb-3">Min–max line items per order. One Viewed Product and one Added to Cart event per product.</p>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-600 w-7">Min</span>
-                          <input
-                            type="number"
-                            min={1}
-                            max={10}
-                            value={productsPerOrderMin}
-                            onChange={(e) => setProductsPerOrderMin(Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)))}
-                            className="w-14 rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-center"
-                          />
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-600 w-7">Max</span>
-                          <input
-                            type="number"
-                            min={1}
-                            max={10}
-                            value={productsPerOrderMax}
-                            onChange={(e) => setProductsPerOrderMax(Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)))}
-                            className="w-14 rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-center"
-                          />
-                        </div>
-                        <span className="text-xs text-gray-500">items per order</span>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
 
-            {/* Step 4: Profile assignment — own section */}
+            {/* Step 4: Profile assignment — left cards, right selection (like catalog items) */}
             <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
               <div className="bg-gradient-to-r from-indigo-50 to-white px-6 py-4 border-b border-gray-200">
                 <h2 className="text-lg font-semibold text-gray-900">
                   <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white text-sm font-bold mr-3">4</span>
                   Profile assignment
                 </h2>
-                <p className="text-sm text-gray-500 mt-1 ml-11">Choose who the generated events will be attributed to.</p>
+                <p className="text-sm text-gray-500 mt-1 ml-11">Who should the generated events be attributed to?</p>
               </div>
               <div className="p-6">
-                <div className="w-full max-w-full md:max-w-[50%] min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 mb-1">Profile source</p>
-                  <p className="text-xs text-gray-500 mb-4">Generate random profiles for this run or select existing profiles from your Klaviyo account.</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-                  <button
-                    type="button"
-                    onClick={() => { setProfileMode('auto'); setSelectedProfileIds([]) }}
-                    className={`rounded-xl border-2 p-4 text-left transition-colors ${
-                      profileMode === 'auto' ? 'border-indigo-500 bg-indigo-50/50 shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    <span className="block text-sm font-semibold text-gray-900">Generate random profiles</span>
-                    <p className="text-xs text-gray-500 mt-1">Create N simulated profiles for this run. Events are attributed to these profiles (not created in your account).</p>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setProfileMode('selected')}
-                    className={`rounded-xl border-2 p-4 text-left transition-colors ${
-                      profileMode === 'selected' ? 'border-indigo-500 bg-indigo-50/50 shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    <span className="block text-sm font-semibold text-gray-900">Use existing profiles</span>
-                    <p className="text-xs text-gray-500 mt-1">Select profiles from your Klaviyo account. Generated events will be assigned to the profiles you choose.</p>
-                  </button>
-                </div>
-
-                {profileMode === 'auto' && (
-                  <div className="rounded-lg border border-gray-200 bg-white p-4 w-full">
-                    <label className="block text-sm font-semibold text-gray-900 mb-2">Number of profiles</label>
-                    <div className="flex items-center gap-2">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Left: profile source cards */}
+                  <div className="space-y-3 min-w-0">
+                    <h3 className="text-sm font-semibold text-gray-900">Profile source</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+                      <div
+                        className={`rounded-xl border-2 p-4 text-left transition-colors flex flex-col min-h-[120px] ${
+                          profileMode === 'auto' ? 'border-indigo-500 bg-indigo-50/50 shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => { setProfileMode('auto'); setSelectedProfileIds([]) }}
+                          className="w-full text-left flex-1 min-h-0 flex flex-col items-start"
+                        >
+                          <span className="block text-sm font-semibold text-gray-900">Generate random profiles</span>
+                          <p className="text-xs text-gray-500 mt-1">Simulated profiles for this run only.</p>
+                        </button>
+                        {profileMode === 'auto' && (
+                          <div className="mt-3 flex-shrink-0 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={() => setProfilesCount((c) => Math.max(1, c - 1))}
+                              className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                              aria-label="Decrease"
+                            >
+                              −
+                            </button>
+                            <input
+                              type="number"
+                              min={1}
+                              max={50}
+                              value={profilesCount}
+                              onChange={(e) => setProfilesCount(Math.max(1, Math.min(50, parseInt(e.target.value, 10) || 1)))}
+                              className="w-14 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-center focus:ring-2 focus:ring-indigo-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setProfilesCount((c) => Math.min(50, c + 1))}
+                              className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                              aria-label="Increase"
+                            >
+                              +
+                            </button>
+                            <span className="text-xs text-gray-500">profiles</span>
+                          </div>
+                        )}
+                      </div>
                       <button
                         type="button"
-                        onClick={() => setProfilesCount((c) => Math.max(1, c - 1))}
-                        className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-                        aria-label="Decrease number of profiles"
+                        onClick={() => setProfileMode('selected')}
+                        className={`rounded-xl border-2 p-4 text-left transition-colors min-h-[120px] flex flex-col items-start justify-start ${
+                          profileMode === 'selected' ? 'border-indigo-500 bg-indigo-50/50 shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                        }`}
                       >
-                        −
+                        <span className="block text-sm font-semibold text-gray-900">Use existing profiles</span>
+                        <p className="text-xs text-gray-500 mt-1">Select from your Klaviyo account.</p>
                       </button>
-                      <input
-                        type="number"
-                        min={1}
-                        max={50}
-                        value={profilesCount}
-                        onChange={(e) => setProfilesCount(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                        className="w-16 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-center focus:ring-2 focus:ring-indigo-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setProfilesCount((c) => Math.min(50, c + 1))}
-                        className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-                        aria-label="Increase number of profiles"
-                      >
-                        +
-                      </button>
-                      <span className="text-sm text-gray-500">profiles for this run</span>
                     </div>
                   </div>
-                )}
 
-                {profileMode === 'selected' && (
-                  <div className="rounded-lg border border-gray-200 bg-white overflow-hidden flex flex-col min-h-[260px]" ref={profileDropdownRef}>
-                    <div className="px-4 py-3 border-b border-gray-200 bg-gray-50/50 shrink-0">
-                      <p className="text-sm font-semibold text-gray-900">
-                        {selectedProfileIds.length === 0
-                          ? 'No profiles selected'
-                          : `${selectedProfileIds.length} profile${selectedProfileIds.length !== 1 ? 's' : ''} selected for this run`}
-                      </p>
-                    </div>
-                    {!getActiveApiKey() && <p className="px-4 py-2 text-xs text-amber-600 border-b border-gray-100">Set your API key in Settings to load profiles.</p>}
-                    {availableProfiles.length === 0 && !profilesLoadError && getActiveApiKey() && (
-                      <div className="p-4 border-b border-gray-100">
-                        <button type="button" onClick={loadProfiles} className="text-sm font-medium text-indigo-600 hover:text-indigo-800">Load profiles from account</button>
-                      </div>
-                    )}
-                    {profilesLoadError && <p className="px-4 py-2 text-xs text-amber-600 border-b border-gray-100">{profilesLoadError}</p>}
-                    {availableProfiles.length > 0 && (
+                  {/* Right: profile selection or random profiles preview */}
+                  <div className="min-w-0">
+                    {profileMode === 'selected' ? (
                       <>
-                        <div className="p-2 border-b border-gray-100 shrink-0">
-                          <input
-                            type="search"
-                            placeholder="Search by email, name, or ID…"
-                            value={profileSearchQuery}
-                            onChange={(e) => setProfileSearchQuery(e.target.value)}
-                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                          />
+                        <h3 className="text-sm font-semibold text-gray-900 mb-1">Which profiles to use?</h3>
+                        <p className="text-xs text-gray-500 mb-2">Select at least one profile. Generated events will be assigned to them.</p>
+                        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden flex flex-col min-h-[260px]" ref={profileDropdownRef}>
+                          <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2 bg-gray-50/50 shrink-0">
+                            <span className="text-xs text-gray-600">
+                              {selectedProfileIds.length === 0
+                                ? 'No profiles selected'
+                                : `${selectedProfileIds.length} of ${availableProfiles.length} selected`}
+                            </span>
+                            {availableProfiles.length > 0 && (
+                              <div className="flex gap-2">
+                                <button type="button" onClick={() => setSelectedProfileIds(availableProfiles.map((p) => p.id))} className="text-xs font-medium text-indigo-600 hover:text-indigo-800">Select all</button>
+                                <span className="text-gray-300">|</span>
+                                <button type="button" onClick={() => setSelectedProfileIds([])} className="text-xs font-medium text-indigo-600 hover:text-indigo-800">Deselect all</button>
+                              </div>
+                            )}
+                          </div>
+                          {!getActiveApiKey() && <p className="px-4 py-2 text-xs text-amber-600 border-b border-gray-100">Set your API key in Settings to load profiles.</p>}
+                          {availableProfiles.length === 0 && !profilesLoadError && getActiveApiKey() && (
+                            <div className="p-4 border-b border-gray-100">
+                              <button type="button" onClick={loadProfiles} className="text-sm font-medium text-indigo-600 hover:text-indigo-800">Load profiles from account</button>
+                            </div>
+                          )}
+                          {profilesLoadError && <p className="px-4 py-2 text-xs text-amber-600 border-b border-gray-100">{profilesLoadError}</p>}
+                          {availableProfiles.length > 0 && (
+                            <>
+                              <div className="p-2 border-b border-gray-100 shrink-0">
+                                <input
+                                  type="search"
+                                  placeholder="Search by email, name, or ID…"
+                                  value={profileSearchQuery}
+                                  onChange={(e) => setProfileSearchQuery(e.target.value)}
+                                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                />
+                              </div>
+                              <ul className="py-1 overflow-y-auto flex-1 min-h-0" style={{ maxHeight: '240px' }}>
+                                {(() => {
+                                  const q = (profileSearchQuery || '').trim().toLowerCase()
+                                  const filtered = q
+                                    ? availableProfiles.filter((p) => {
+                                        const email = (p.attributes?.email || '').toLowerCase()
+                                        const id = (p.id || '').toLowerCase()
+                                        const first = (p.attributes?.first_name || '').toLowerCase()
+                                        const last = (p.attributes?.last_name || '').toLowerCase()
+                                        return email.includes(q) || id.includes(q) || first.includes(q) || last.includes(q)
+                                      })
+                                    : availableProfiles
+                                  if (filtered.length === 0) {
+                                    return <li className="px-4 py-4 text-sm text-gray-500 text-center">{q ? 'No profiles match your search.' : 'No profiles.'}</li>
+                                  }
+                                  return filtered.map((p) => (
+                                    <li key={p.id}>
+                                      <label className="flex items-center gap-2 px-4 py-2 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0">
+                                        <input
+                                          type="checkbox"
+                                          checked={selectedProfileIds.includes(p.id)}
+                                          onChange={() => setSelectedProfileIds((prev) => prev.includes(p.id) ? prev.filter((id) => id !== p.id) : [...prev, p.id])}
+                                          className="rounded border-gray-300 text-indigo-600 shrink-0"
+                                        />
+                                        <span className="text-sm truncate">{p.attributes?.email || p.id}</span>
+                                      </label>
+                                    </li>
+                                  ))
+                                })()}
+                              </ul>
+                            </>
+                          )}
                         </div>
-                        <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between gap-2 shrink-0">
-                          <span className="text-xs text-gray-600">{selectedProfileIds.length} of {availableProfiles.length} selected</span>
-                          <div className="flex gap-2">
-                            <button type="button" onClick={() => setSelectedProfileIds(availableProfiles.map((p) => p.id))} className="text-xs font-medium text-indigo-600 hover:text-indigo-800">Select all</button>
-                            <span className="text-gray-300">|</span>
-                            <button type="button" onClick={() => setSelectedProfileIds([])} className="text-xs font-medium text-indigo-600 hover:text-indigo-800">Deselect all</button>
+                      </>
+                    ) : (
+                      <>
+                        <h3 className="text-sm font-semibold text-gray-900 mb-1">Which profiles to use?</h3>
+                        <p className="text-xs text-gray-500 mb-2">{profilesCount} random profile{profilesCount !== 1 ? 's' : ''} will be generated for this run.</p>
+                        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden flex flex-col min-h-[260px]">
+                          <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2 bg-gray-50/50 shrink-0">
+                            <span className="text-xs text-gray-600">{profilesCount} profile{profilesCount !== 1 ? 's' : ''} (preview)</span>
+                          </div>
+                          <div className="flex-1 overflow-y-auto min-h-0" style={{ maxHeight: '240px' }}>
+                            <table className="w-full text-sm">
+                              <thead className="bg-gray-50/80 sticky top-0 z-[0]">
+                                <tr>
+                                  <th className="text-left py-2 px-4 font-semibold text-gray-700" scope="col">First name</th>
+                                  <th className="text-left py-2 px-4 font-semibold text-gray-700" scope="col">Last name</th>
+                                  <th className="text-left py-2 px-4 font-semibold text-gray-700" scope="col">Email</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {Array.from({ length: profilesCount }, (_, i) => {
+                                  const { email, firstName, lastName } = getProfileEmailAndName(i, 'klaviyo-dummy.com')
+                                  return (
+                                    <tr key={i} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50">
+                                      <td className="py-2 px-4 font-medium text-gray-900">{firstName}</td>
+                                      <td className="py-2 px-4 font-medium text-gray-900">{lastName}</td>
+                                      <td className="py-2 px-4 text-gray-600">{email}</td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
                           </div>
                         </div>
-                        <ul className="py-1 overflow-y-auto flex-1 min-h-0" style={{ maxHeight: '240px' }}>
-                          {(() => {
-                            const q = (profileSearchQuery || '').trim().toLowerCase()
-                            const filtered = q
-                              ? availableProfiles.filter((p) => {
-                                  const email = (p.attributes?.email || '').toLowerCase()
-                                  const id = (p.id || '').toLowerCase()
-                                  const first = (p.attributes?.first_name || '').toLowerCase()
-                                  const last = (p.attributes?.last_name || '').toLowerCase()
-                                  return email.includes(q) || id.includes(q) || first.includes(q) || last.includes(q)
-                                })
-                              : availableProfiles
-                            if (filtered.length === 0) {
-                              return <li className="px-4 py-4 text-sm text-gray-500 text-center">{q ? 'No profiles match your search.' : 'No profiles.'}</li>
-                            }
-                            return filtered.map((p) => (
-                              <li key={p.id}>
-                                <label className="flex items-center gap-2 px-4 py-2 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0">
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedProfileIds.includes(p.id)}
-                                    onChange={() => setSelectedProfileIds((prev) => prev.includes(p.id) ? prev.filter((id) => id !== p.id) : [...prev, p.id])}
-                                    className="rounded border-gray-300 text-indigo-600 shrink-0"
-                                  />
-                                  <span className="text-sm truncate">{p.attributes?.email || p.id}</span>
-                                </label>
-                              </li>
-                            ))
-                          })()}
-                        </ul>
                       </>
                     )}
                   </div>
-                )}
                 </div>
               </div>
             </div>
@@ -1090,11 +1193,11 @@ export default function EventsPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => { handleGenerate(); setGenerateStep('setup'); setEventsTab('jobs') }}
-                      disabled={selectedEventNames.length === 0 || !hasEnoughData}
+                      onClick={async () => { await handleGenerate(); setGenerateStep('setup'); setEventsTab('jobs') }}
+                      disabled={selectedEventNames.length === 0 || !hasEnoughData || sendingToKlaviyo}
                       className="inline-flex items-center rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Generate events
+                      {sendingToKlaviyo ? 'Sending to Klaviyo…' : 'Generate events'}
                     </button>
                   </div>
                 </div>
@@ -1113,7 +1216,7 @@ export default function EventsPage() {
                         <li><span className="text-gray-500">Dates:</span> {DATE_RANGE_OPTIONS.find((o) => o.value === dateRange)?.label ?? dateRange}</li>
                         {needsProducts && <li><span className="text-gray-500">Items/order:</span> {productsPerOrderMin}–{Math.max(productsPerOrderMin, productsPerOrderMax)}</li>}
                       </ul>
-                      <p className="mt-3 text-xs text-gray-500">All events use the <code className="bg-gray-100 px-1 rounded">K:Dummy</code> prefix.</p>
+                      <p className="mt-3 text-xs text-gray-500">Events are sent to Klaviyo and use the <code className="bg-gray-100 px-1 rounded">(KD)</code> metric suffix.</p>
                     </div>
 
                     {/* Example payloads — 2/3: event list + 1–3 examples per event */}
@@ -1156,9 +1259,8 @@ export default function EventsPage() {
                               key={name}
                               type="button"
                               onClick={() => { setPreviewEventName(name); setPreviewExampleIndex(0) }}
-                              className={`px-4 py-3 text-left text-sm font-medium whitespace-nowrap border-b sm:border-b-0 sm:border-r border-gray-200 last:border-0 transition-colors flex items-center gap-2 ${previewEventName === name ? 'bg-white text-indigo-700 border-indigo-500 sm:border-r-indigo-500 shadow-sm' : 'text-gray-600 hover:bg-white hover:text-gray-900'}`}
+                              className={`px-4 py-3 text-left text-sm font-medium whitespace-nowrap border-b sm:border-b-0 sm:border-r border-gray-200 last:border-0 transition-colors ${previewEventName === name ? 'bg-white text-indigo-700 border-indigo-500 sm:border-r-indigo-500 shadow-sm' : 'text-gray-600 hover:bg-white hover:text-gray-900'}`}
                             >
-                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-200 text-xs font-semibold text-gray-600">{idx + 1}</span>
                               {name}
                             </button>
                           ))}
@@ -1167,12 +1269,13 @@ export default function EventsPage() {
                           {previewEventName && previewExamplesByEvent[previewEventName] && (
                             (() => {
                               const examples = previewExamplesByEvent[previewEventName]
-                              const payload = examples[previewExampleIndex] ?? examples[0]
+                              const sampleProperties = examples[previewExampleIndex] ?? examples[0]
+                              const klaviyoPayload = samplePropertiesToKlaviyoEventPayload(sampleProperties, previewEventName)
                               return (
                                 <>
-                                  <p className="text-xs text-gray-500 mb-2">{previewEventName} — example {previewExampleIndex + 1} of {examples.length}</p>
+                                  <p className="text-xs text-gray-500 mb-2">{previewEventName} — example {previewExampleIndex + 1} of {examples.length} (Klaviyo API request body)</p>
                                   <pre className="flex-1 text-xs text-gray-800 bg-gray-50 rounded-lg p-4 overflow-auto border border-gray-100 font-mono min-h-[260px]" style={{ maxHeight: 'min(420px, 50vh)' }}>
-                                    {JSON.stringify(payload, null, 2)}
+                                    {JSON.stringify(klaviyoPayload, null, 2)}
                                   </pre>
                                 </>
                               )
@@ -1187,15 +1290,15 @@ export default function EventsPage() {
                   <div className="rounded-xl border-2 border-indigo-200 bg-indigo-50/50 p-6 flex flex-wrap items-center justify-between gap-4">
                     <div>
                       <p className="text-sm font-semibold text-gray-900">Ready to generate</p>
-                      <p className="text-xs text-gray-600 mt-0.5">Events will be created with the <code className="bg-white/80 px-1 rounded">K:Dummy</code> prefix and saved to run history.</p>
+                      <p className="text-xs text-gray-600 mt-0.5">Events will be sent to Klaviyo (metric name suffix <code className="bg-white/80 px-1 rounded">(KD)</code>) and saved to run history for review.</p>
                     </div>
                     <button
                       type="button"
-                      onClick={() => { handleGenerate(); setGenerateStep('setup'); setEventsTab('jobs') }}
-                      disabled={selectedEventNames.length === 0 || !hasEnoughData}
+                      onClick={async () => { await handleGenerate(); setGenerateStep('setup'); setEventsTab('jobs') }}
+                      disabled={selectedEventNames.length === 0 || !hasEnoughData || sendingToKlaviyo}
                       className="inline-flex items-center rounded-lg bg-indigo-600 px-6 py-3 text-base font-semibold text-white shadow-md hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Generate events
+                      {sendingToKlaviyo ? 'Sending to Klaviyo…' : 'Generate events'}
                     </button>
                   </div>
                 </div>

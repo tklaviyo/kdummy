@@ -17,8 +17,10 @@ const defaultDataCatalog = {
       { points: 1000, reward: '$50 off' },
     ],
   },
-  // Locations start empty; templates are applied explicitly from the UI when the user chooses to generate them.
+  // Locations, services, subscriptions start empty; user adds custom or chooses template in UI.
   locations: [],
+  services: [],
+  subscriptions: [],
   products: [
     { id: 'PROD-001', name: 'Wireless Headphones', category: 'Electronics', price: 99.99 },
     { id: 'PROD-002', name: 'Smart Watch', category: 'Electronics', price: 249.99 },
@@ -62,11 +64,17 @@ export async function GET(request) {
       case 'locations':
         data = dataCatalog.locations || []
         break
+      case 'services':
+        data = dataCatalog.services || []
+        break
+      case 'subscriptions':
+        data = dataCatalog.subscriptions || []
+        break
       case 'products':
-        data = dataCatalog.products
+        data = dataCatalog.products || []
         break
       case 'reservations':
-        data = dataCatalog.reservations
+        data = dataCatalog.reservations || []
         break
       default:
         return NextResponse.json(

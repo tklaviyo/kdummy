@@ -10,13 +10,14 @@
 import { getEventPropertiesForBusinessType } from './eventPropertiesByBusinessType'
 import { getCustomisationsForEvent, customisationsToSchema } from './eventPropertiesCustomisationsStorage'
 import { getPropertyRange, pickValueFromRange } from './eventPropertyRanges'
+import { getLocationsList, toEventLocation } from './defaultLocations'
 
-/** Prefix for dummy event metric names so they are easily identifiable in Klaviyo */
-export const DUMMY_EVENT_PREFIX = 'K:Dummy '
+/** Suffix for dummy event metric names in Klaviyo (e.g. "Placed Order (KD)") */
+export const KD_METRIC_SUFFIX = ' (KD)'
 
 /** Mandatory property: key, description, example (or source: 'catalog' for catalog-driven) */
 const MANDATORY = [
-  { key: 'metric_name', description: 'Event metric name', example: 'K:Dummy Viewed Product', source: 'system' },
+  { key: 'metric_name', description: 'Event metric name', example: 'Viewed Product (KD)', source: 'system' },
   { key: 'time', description: 'Event time (ISO 8601)', example: '2025-01-28T12:00:00.000Z', source: 'system' },
   { key: 'profile_id', description: 'Profile identifier', example: '01J001', source: 'system' },
   { key: 'profile_email', description: 'Profile email', example: 'profile-001@klaviyo-dummy.com', source: 'system' },
@@ -268,9 +269,12 @@ export const EVENT_PROPERTY_SCHEMAS = {
     mandatory: [
       ...MANDATORY,
       { key: 'booking_id', description: 'Booking identifier', example: 'book_001', source: 'system' },
-      { key: 'location_id', description: 'Check-in location', example: 'loc_1', source: 'system' },
+      { key: 'location_id', description: 'Check-in location ID', example: 'loc_1', source: 'catalog' },
+      { key: 'location_name', description: 'Check-in location name', example: 'Main Store', source: 'catalog' },
     ],
-    catalogDriven: [],
+    catalogDriven: [
+      { key: 'location_address', description: 'Check-in location address', source: 'catalog' },
+    ],
     catalogItemType: null,
   },
   'Booking Attended': {
@@ -474,11 +478,29 @@ export function getMergedEventPropertySchema(eventName, businessTypeId) {
 }
 
 /**
+ * Get a single location for sample/preview: from context or first from catalog (or default).
+ * @param {object} catalog - { locations?, ... }
+ * @param {object} context - optional { locationId, locationName, locationAddress }
+ * @returns {{ location_id: string, location_name: string, location_address: string }}
+ */
+function getLocationForPreview(catalog, context) {
+  if (context.locationId != null || context.locationName != null) {
+    return toEventLocation({
+      location_id: context.locationId,
+      location_name: context.locationName,
+      location_address: context.locationAddress,
+    })
+  }
+  const list = getLocationsList(catalog)
+  return toEventLocation(list[0] ?? null)
+}
+
+/**
  * Build sample event properties for preview, using a catalog item when the event is catalog-driven.
  * When context.businessTypeId is set, merged schema (base + business-type overrides) is used.
  * @param {string} eventName
- * @param {object} catalog - { products, services, subscriptions }
- * @param {object} context - optional { orderId, value, currency, profileEmail, profileId, businessTypeId, catalogKind: 'product'|'service'|'subscription' }
+ * @param {object} catalog - { products, services, subscriptions, locations? }
+ * @param {object} context - optional { orderId, value, currency, profileEmail, profileId, businessTypeId, catalogKind: 'product'|'service'|'subscription', locationId, locationName, locationAddress }
  * @returns {{ properties: object, schema: object | null }}
  */
 export function buildSampleEventProperties(eventName, catalog, context = {}) {
@@ -489,7 +511,7 @@ export function buildSampleEventProperties(eventName, catalog, context = {}) {
   const profileEmail = context.profileEmail ?? 'profile-001@klaviyo-dummy.com'
 
   const base = {
-    metric_name: DUMMY_EVENT_PREFIX + eventName,
+    metric_name: eventName + KD_METRIC_SUFFIX,
     time: now,
     profile_id: profileId,
     profile_email: profileEmail,
@@ -628,9 +650,10 @@ export function buildSampleEventProperties(eventName, catalog, context = {}) {
     properties.source = context.orderSource ?? 'online'
     properties.OrderType = context.orderType ?? 'One time'
     if (context.orderSource === 'instore') {
-      properties.location_id = context.locationId ?? 'loc_001'
-      properties.location_name = context.locationName ?? 'Main Store'
-      properties.location_address = context.locationAddress ?? '123 Main St, City, ST 12345'
+      const loc = getLocationForPreview(catalog, context)
+      properties.location_id = loc.location_id
+      properties.location_name = loc.location_name
+      properties.location_address = loc.location_address
     }
   }
   if (eventName === 'Ordered Product' && item) {
@@ -658,9 +681,10 @@ export function buildSampleEventProperties(eventName, catalog, context = {}) {
     properties.item_names = orderLists.item_names
     properties.categories = orderLists.categories
     if (context.orderSource === 'instore') {
-      properties.location_id = context.locationId ?? 'loc_001'
-      properties.location_name = context.locationName ?? 'Main Store'
-      properties.location_address = context.locationAddress ?? '123 Main St, City, ST 12345'
+      const loc = getLocationForPreview(catalog, context)
+      properties.location_id = loc.location_id
+      properties.location_name = loc.location_name
+      properties.location_address = loc.location_address
     }
   }
   if (eventName === 'Refunded Order') {
@@ -672,9 +696,10 @@ export function buildSampleEventProperties(eventName, catalog, context = {}) {
     properties.item_names = orderLists.item_names
     properties.categories = orderLists.categories
     if (context.orderSource === 'instore') {
-      properties.location_id = context.locationId ?? 'loc_001'
-      properties.location_name = context.locationName ?? 'Main Store'
-      properties.location_address = context.locationAddress ?? '123 Main St, City, ST 12345'
+      const loc = getLocationForPreview(catalog, context)
+      properties.location_id = loc.location_id
+      properties.location_name = loc.location_name
+      properties.location_address = loc.location_address
     }
   }
   if (eventName === 'Booking Created' && item) {
@@ -688,7 +713,12 @@ export function buildSampleEventProperties(eventName, catalog, context = {}) {
     properties.booking_id = 'book_001'
     if (item) properties.service_name = item.name
     if (eventName === 'Booking Reminder') properties.booking_at = now
-    if (eventName === 'Booking Checked in') properties.location_id = 'loc_1'
+    if (['Booking Checked in', 'Booking Attended', 'Booking Created'].includes(eventName)) {
+      const loc = getLocationForPreview(catalog, context)
+      properties.location_id = loc.location_id
+      properties.location_name = loc.location_name
+      properties.location_address = loc.location_address
+    }
   }
   if (eventName === 'Subscription Expiry Reminder') {
     properties.subscription_id = item?.id ?? 'sub_123'

@@ -1,10 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, forwardRef, useImperativeHandle } from 'react'
 import { getActiveApiKey } from '@/lib/storage'
 import { useConfirm } from '@/context/ConfirmContext'
+import { groupProperties, PROFILE_PROPERTY_GROUPS, getPropertyGroupId } from '@/lib/profilePropertyGroups'
+import { getCatalogItemsForSource, hasCustomCatalogData } from '@/lib/defaultCatalogTemplates'
 
-export default function ProfilePropertiesTab({ onPropertiesChange }) {
+const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onPropertiesChange, headerRenderedByParent = false }, ref) {
   const { alert, confirm } = useConfirm()
   const [properties, setProperties] = useState([])
   const [loading, setLoading] = useState(false)
@@ -18,6 +20,7 @@ export default function ProfilePropertiesTab({ onPropertiesChange }) {
     reservations: [],
     loyalty: [],
   })
+  const [activeGroupId, setActiveGroupId] = useState('all')
   
   // Form state
   const [formData, setFormData] = useState({
@@ -27,21 +30,31 @@ export default function ProfilePropertiesTab({ onPropertiesChange }) {
     description: '',
     default_value: '',
     options: '',
-    data_source: 'static', // 'static' or catalog source
+    data_source: 'static',
+    catalog_source_choice: 'catalog',
+    catalog_template: '',
     object_property_mapping: '',
     required: false,
-    // For date range
+    group: 'other',
     date_min: '',
     date_max: '',
-    // For integer range
     integer_min: '',
     integer_max: '',
+    array_min_items: '',
+    array_max_items: '',
   })
 
   useEffect(() => {
     fetchProperties()
     fetchCatalogData()
   }, [])
+
+  useEffect(() => {
+    if (properties.length === 0) return
+    const grouped = groupProperties(properties)
+    const hasActive = activeGroupId === 'all' || grouped.some((g) => g.groupId === activeGroupId)
+    if (!hasActive && grouped.length > 0) setActiveGroupId('all')
+  }, [properties, activeGroupId])
 
   // Helper to add API key to fetch requests
   const fetchWithApiKey = async (url, options = {}) => {
@@ -111,18 +124,25 @@ export default function ProfilePropertiesTab({ onPropertiesChange }) {
       default_value: '',
       options: '',
       data_source: 'static',
+      catalog_source_choice: 'catalog',
+      catalog_template: '',
       object_property_mapping: '',
       required: false,
+      group: 'other',
       date_min: '',
       date_max: '',
       integer_min: '',
       integer_max: '',
+      array_min_items: '',
+      array_max_items: '',
     })
     setShowAddModal(true)
   }
 
   const handleEdit = (property) => {
     setEditingProperty(property)
+    const catalogSource = property.catalog_source || 'static'
+    const hasTemplate = !!(property.catalog_template && ['products', 'services', 'subscriptions'].includes(catalogSource))
     setFormData({
       name: property.name,
       original_name: property.original_name || property.name,
@@ -130,13 +150,18 @@ export default function ProfilePropertiesTab({ onPropertiesChange }) {
       description: property.description || '',
       default_value: property.default_value || '',
       options: property.options ? property.options.join(', ') : '',
-      data_source: property.catalog_source || 'static',
-      object_property_mapping: property.object_property_mapping || '',
+      data_source: catalogSource,
+      catalog_source_choice: hasTemplate ? 'template' : 'catalog',
+      catalog_template: property.catalog_template || '',
+      object_property_mapping: property.object_property_mapping === 'id' || property.object_property_mapping === 'name' ? property.object_property_mapping : '',
       required: property.required || false,
+      group: getPropertyGroupId(property),
       date_min: property.date_min || '',
       date_max: property.date_max || '',
-      integer_min: property.integer_min || '',
-      integer_max: property.integer_max || '',
+      integer_min: property.integer_min ?? '',
+      integer_max: property.integer_max ?? '',
+      array_min_items: property.array_min_items != null ? String(property.array_min_items) : '',
+      array_max_items: property.array_max_items != null ? String(property.array_max_items) : '',
     })
     setShowAddModal(true)
   }
@@ -170,6 +195,8 @@ export default function ProfilePropertiesTab({ onPropertiesChange }) {
       return
     }
 
+    const mapping = formData.object_property_mapping?.trim()
+    const object_property_mapping = mapping === 'id' || mapping === 'name' ? mapping : null
     const propertyData = {
       name: formData.name.trim(),
       type: formData.type,
@@ -177,15 +204,18 @@ export default function ProfilePropertiesTab({ onPropertiesChange }) {
       default_value: formData.default_value || null,
       options: formData.data_source === 'static' && formData.options ? formData.options.split(',').map(o => o.trim()).filter(o => o) : null,
       catalog_source: formData.data_source !== 'static' ? formData.data_source : null,
-      object_property_mapping: formData.object_property_mapping.trim() || null,
+      catalog_template: formData.data_source !== 'static' && formData.catalog_source_choice === 'template' && formData.catalog_template ? formData.catalog_template : null,
+      object_property_mapping,
       required: formData.required,
+      group: formData.group || 'other',
       date_min: formData.date_min || null,
       date_max: formData.date_max || null,
-      integer_min: formData.integer_min || null,
-      integer_max: formData.integer_max || null,
+      integer_min: formData.integer_min !== '' ? formData.integer_min : null,
+      integer_max: formData.integer_max !== '' ? formData.integer_max : null,
+      array_min_items: formData.array_min_items !== '' ? parseInt(formData.array_min_items, 10) : null,
+      array_max_items: formData.array_max_items !== '' ? parseInt(formData.array_max_items, 10) : null,
     }
 
-    // If editing a default property, include original_name
     if (editingProperty && isDefaultProperty(editingProperty)) {
       propertyData.original_name = formData.original_name
     }
@@ -251,8 +281,8 @@ export default function ProfilePropertiesTab({ onPropertiesChange }) {
 
   const isDefaultProperty = (property) => {
     const defaultNames = [
-      'gender', 'birthday', 'marketing_preferences', 'product_preferences',
-      'signup_store', 'favourite_store', 'recent_store', 'signup_date',
+      'gender', 'birthday', 'marketing_preferences',
+      'signup_store', 'favorite_store', 'recent_store', 'signup_date',
       'loyalty_member', 'loyalty_signup_date', 'loyalty_points', 'loyalty_spend',
       'current_loyalty_tier', 'next_loyalty_tier'
     ]
@@ -261,28 +291,33 @@ export default function ProfilePropertiesTab({ onPropertiesChange }) {
 
   const getObjectProperties = (catalogSource) => {
     if (!catalogSource || catalogSource === 'static') return []
-    
-    const catalog = catalogData[catalogSource]
-    if (!catalog || catalog.length === 0) return []
-    
-    // Get all unique property keys from catalog items
+    const items = getCatalogItemsForSource(catalogSource, catalogData, true)
+    if (!items.length) return []
     const allKeys = new Set()
-    catalog.forEach(item => {
+    items.forEach(item => {
       Object.keys(item).forEach(key => allKeys.add(key))
     })
     return Array.from(allKeys)
   }
 
+  useImperativeHandle(ref, () => ({
+    openAddModal: () => {
+      handleAdd()
+    },
+  }), [])
+
   return (
     <div>
-      <div className="mb-6 flex justify-end">
-        <button
-          onClick={handleAdd}
-          className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition-colors"
-        >
-          Add Property
-        </button>
-      </div>
+      {!headerRenderedByParent && (
+        <div className="mb-6 flex justify-end">
+          <button
+            onClick={handleAdd}
+            className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition-colors"
+          >
+            Add Property
+          </button>
+        </div>
+      )}
 
       {/* Add/Edit Modal */}
       {showAddModal && (
@@ -322,6 +357,20 @@ export default function ProfilePropertiesTab({ onPropertiesChange }) {
                       </button>
                     </div>
                   )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Group</label>
+                  <select
+                    value={formData.group}
+                    onChange={(e) => setFormData({ ...formData, group: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                  >
+                    {PROFILE_PROPERTY_GROUPS.map((g) => (
+                      <option key={g.id} value={g.id}>{g.label}</option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-gray-500">Category for organising this property on Generate and Configure screens.</p>
                 </div>
 
                 <div>
@@ -366,55 +415,34 @@ export default function ProfilePropertiesTab({ onPropertiesChange }) {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Data Source *</label>
                   <select
                     value={formData.data_source}
-                    onChange={(e) => setFormData({ ...formData, data_source: e.target.value, object_property_mapping: '', options: e.target.value !== 'static' ? '' : formData.options })}
+                    onChange={(e) => setFormData({ ...formData, data_source: e.target.value, object_property_mapping: '', catalog_template: '', catalog_source_choice: 'catalog', options: e.target.value !== 'static' ? '' : formData.options })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
                   >
                     <option value="static">Static</option>
-                    <option value="products">Products</option>
-                    <option value="services">Services</option>
-                    <option value="subscriptions">Subscriptions</option>
                     <option value="locations">Locations / Stores</option>
                     <option value="reservations">Reservations (advanced)</option>
                     <option value="loyalty">Loyalty</option>
                   </select>
                   <p className="mt-1 text-xs text-gray-500">
-                    {formData.data_source === 'static' 
+                    {formData.data_source === 'static'
                       ? 'Static values - configure options below'
-                      : 'Dynamic values from Data Catalog - values will be drawn from the chosen catalog source'}
+                      : 'Dynamic values from catalog. For multiple profiles you select items on the Generate step; for a single profile you pick or type a value.'}
                   </p>
                 </div>
 
                 {formData.data_source !== 'static' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Map to Object Property</label>
-                    {getObjectProperties(formData.data_source).length > 0 ? (
-                      <>
-                        <select
-                          value={formData.object_property_mapping}
-                          onChange={(e) => setFormData({ ...formData, object_property_mapping: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                        >
-                          <option value="">Select property...</option>
-                          {getObjectProperties(formData.data_source).map(prop => (
-                            <option key={prop} value={prop}>{prop}</option>
-                          ))}
-                        </select>
-                        <p className="mt-1 text-xs text-gray-500">Map this profile property to a specific field from the catalog object (e.g. id, name, category).</p>
-                      </>
-                    ) : (
-                      <>
-                        <select
-                          disabled
-                          className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-sm text-gray-400"
-                        >
-                          <option>No catalog fields available yet</option>
-                        </select>
-                        <p className="mt-1 text-xs text-gray-500">
-                          This property will fall back to sensible defaults when generating profiles (e.g. using item name or id)
-                          until catalog data is available.
-                        </p>
-                      </>
-                    )}
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Map to catalog field</label>
+                    <select
+                      value={formData.object_property_mapping}
+                      onChange={(e) => setFormData({ ...formData, object_property_mapping: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                    >
+                      <option value="">Select...</option>
+                      <option value="id">id</option>
+                      <option value="name">name</option>
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">Profile property values will use the catalog item’s id or name. Used when generating multiple profiles.</p>
                   </div>
                 )}
 
@@ -559,6 +587,34 @@ export default function ProfilePropertiesTab({ onPropertiesChange }) {
                     ) : (
                       <p className="text-sm text-gray-600 italic">Array will be populated dynamically from the selected Data Catalog source</p>
                     )}
+                    <div className="mt-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Array size (min / max items)</label>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">Min items</label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={formData.array_min_items}
+                            onChange={(e) => setFormData({ ...formData, array_min_items: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                            placeholder="e.g., 0"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">Max items</label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={formData.array_max_items}
+                            onChange={(e) => setFormData({ ...formData, array_max_items: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                            placeholder="e.g., 5"
+                          />
+                        </div>
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500">Leave empty for no constraint when generating</p>
+                    </div>
                   </div>
                 )}
 
@@ -652,114 +708,105 @@ export default function ProfilePropertiesTab({ onPropertiesChange }) {
         </div>
       )}
 
-      {/* Properties List */}
-      <div className="bg-white shadow rounded-lg overflow-hidden">
+      {/* Properties List - 1/3 sidebar + 1/3 + 1/3 card columns (no container border, like Generate) */}
+      <div>
         {loading ? (
           <div className="p-8 text-center text-gray-500">Loading...</div>
         ) : properties.length === 0 ? (
           <div className="p-8 text-center text-gray-500">
             No properties configured. Click "Add Property" to create one.
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Enable</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data Source</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mapping</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {properties.map((property) => {
-                  const isDefault = isDefaultProperty(property)
-                  const nameChanged = property.original_name && property.name !== property.original_name
-                  const isEnabled = property.enabled !== false // Default to true if undefined
-                  return (
-                    <tr key={property.name}>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleEnabled(property.name, isEnabled)}
-                          className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
-                            isEnabled ? 'bg-indigo-600' : 'bg-gray-200'
-                          }`}
-                          role="switch"
-                          aria-checked={isEnabled}
-                        >
-                          <span
-                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                              isEnabled ? 'translate-x-5' : 'translate-x-0'
-                            }`}
-                          />
-                        </button>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{property.name}</div>
-                        {isDefault && (
-                          <div className="text-xs text-indigo-600">Default</div>
-                        )}
-                        {nameChanged && (
-                          <div className="text-xs text-orange-600">Renamed from: {property.original_name}</div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{property.type}</td>
-                      <td className="px-6 py-4 text-sm text-gray-500">{property.description || '-'}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {property.catalog_source ? (
-                          <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded">
-                            {property.catalog_source}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400">Static</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {property.object_property_mapping ? (
-                          <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded">
-                            {property.object_property_mapping}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400">-</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <button
-                          onClick={() => handleEdit(property)}
-                          className="text-indigo-600 hover:text-indigo-900 mr-4"
-                        >
-                          Edit
-                        </button>
-                        {nameChanged && (
-                          <button
-                            onClick={() => handleRevertName(property)}
-                            className="text-orange-600 hover:text-orange-900 mr-4"
-                          >
-                            Revert Name
-                          </button>
-                        )}
-                        {!isDefault && (
-                          <button
-                            onClick={() => handleDelete(property.name)}
-                            className="text-red-600 hover:text-red-900"
-                          >
-                            Delete
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+        ) : (() => {
+          const grouped = groupProperties(properties)
+          const currentProps = activeGroupId === 'all' ? properties : (grouped.find((g) => g.groupId === activeGroupId) || { properties: [] }).properties
+          const navItems = [{ id: 'all', label: 'All properties' }, ...grouped.map((g) => ({ id: g.groupId, label: g.label }))]
+          const mid = Math.ceil(currentProps.length / 2)
+          const leftProps = currentProps.slice(0, mid)
+          const rightProps = currentProps.slice(mid)
+          const renderCard = (property) => {
+            const isDefault = isDefaultProperty(property)
+            const nameChanged = property.original_name && property.name !== property.original_name
+            const isEnabled = property.enabled !== false
+            return (
+              <div
+                key={property.name}
+                className="border border-gray-200 rounded-lg p-4"
+              >
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-medium text-gray-900 truncate">{property.name}</span>
+                      <span className="text-xs text-gray-500">({property.type})</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                      {isDefault && <span className="px-1.5 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-800 rounded">Default</span>}
+                      {nameChanged && <span className="px-1.5 py-0.5 text-xs font-medium bg-orange-100 text-orange-800 rounded">Renamed from: {property.original_name}</span>}
+                      {property.catalog_source ? <span className="px-1.5 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded">{property.catalog_source}</span> : <span className="px-1.5 py-0.5 text-xs font-medium text-gray-500 bg-gray-100 rounded">Static</span>}
+                      {property.object_property_mapping && <span className="px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 rounded">{property.object_property_mapping}</span>}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleEnabled(property.name, isEnabled)}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
+                      isEnabled ? 'bg-indigo-600' : 'bg-gray-200'
+                    }`}
+                    role="switch"
+                    aria-checked={isEnabled}
+                  >
+                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${isEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+                <dl className="space-y-1 text-xs">
+                  <div><dt className="inline font-medium text-gray-500">Description: </dt><dd className="inline text-gray-700">{property.description || '—'}</dd></div>
+                </dl>
+                <div className="mt-3 pt-3 border-t border-gray-200 flex flex-wrap gap-2 justify-end">
+                  <button onClick={() => handleEdit(property)} className="text-xs font-medium text-indigo-600 hover:text-indigo-900">Edit</button>
+                  {nameChanged && <button onClick={() => handleRevertName(property)} className="text-xs font-medium text-orange-600 hover:text-orange-900">Revert name</button>}
+                  {!isDefault && <button onClick={() => handleDelete(property.name)} className="text-xs font-medium text-red-600 hover:text-red-900">Delete</button>}
+                </div>
+              </div>
+            )
+          }
+          return (
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_2fr_2fr] gap-0 min-h-0">
+              <aside className="md:min-w-0 border-b md:border-b-0 md:border-r border-gray-200 flex-shrink-0 p-2">
+                <nav className="flex md:flex-col gap-0 overflow-x-auto md:overflow-x-visible md:overflow-y-auto" aria-label="Property categories">
+                  {navItems.map(({ id, label }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setActiveGroupId(id)}
+                      className={`w-full text-left py-2.5 px-3 rounded-md text-sm font-medium whitespace-nowrap ${
+                        activeGroupId === id
+                          ? 'bg-indigo-100 text-indigo-700'
+                          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </nav>
+              </aside>
+              <div className="min-w-0 p-2 overflow-auto space-y-4">
+                {currentProps.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-4">No properties in this category.</p>
+                ) : (
+                  <div className="space-y-4">{leftProps.map(renderCard)}</div>
+                )}
+              </div>
+              <div className="min-w-0 p-2 overflow-auto space-y-4">
+                {currentProps.length === 0 ? null : (
+                  <div className="space-y-4">{rightProps.map(renderCard)}</div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
       </div>
     </div>
   )
-}
+})
+
+export default ProfilePropertiesTab
 

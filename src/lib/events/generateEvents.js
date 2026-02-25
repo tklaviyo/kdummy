@@ -9,13 +9,17 @@
  */
 
 import { getJourneyById, isProductJourneyType } from './journeyDefinitions'
-import { DUMMY_EVENT_PREFIX, deriveOrderListsFromItems } from './eventPropertiesSchema'
+import { deriveOrderListsFromItems } from './eventPropertiesSchema'
+
+/** Metric name suffix for Klaviyo (e.g. "Placed Order (KD)") */
+const KD = (name) => `${name} (KD)`
 import {
   getTimingProfile,
   linearStepMs,
   bookingStepMs,
   TIMING_PROFILES,
 } from './journeyTimings'
+import { getLocationsList, toEventLocation } from './defaultLocations'
 
 function makeId(prefix, i) {
   return `${prefix}${String(i).padStart(3, '0')}`
@@ -36,6 +40,40 @@ function pickRandomN(arr, n) {
     copy.splice(idx, 1)
   }
   return result
+}
+
+/** Deterministic first/last names for auto-generated profiles (firstname.lastname@domain). */
+const DEMO_PROFILE_NAMES = [
+  { first: 'Sarah', last: 'Smith' }, { first: 'John', last: 'Johnson' }, { first: 'Emily', last: 'Williams' },
+  { first: 'Michael', last: 'Brown' }, { first: 'Jessica', last: 'Jones' }, { first: 'David', last: 'Garcia' },
+  { first: 'Ashley', last: 'Miller' }, { first: 'James', last: 'Davis' }, { first: 'Amanda', last: 'Rodriguez' },
+  { first: 'Robert', last: 'Martinez' }, { first: 'Melissa', last: 'Hernandez' }, { first: 'William', last: 'Lopez' },
+  { first: 'Nicole', last: 'Wilson' }, { first: 'Richard', last: 'Anderson' }, { first: 'Michelle', last: 'Thomas' },
+  { first: 'Joseph', last: 'Taylor' }, { first: 'Kimberly', last: 'Moore' }, { first: 'Thomas', last: 'Jackson' },
+  { first: 'Amy', last: 'Martin' }, { first: 'Christopher', last: 'Lee' }, { first: 'Angela', last: 'Thompson' },
+  { first: 'Daniel', last: 'White' }, { first: 'Lisa', last: 'Harris' }, { first: 'Matthew', last: 'Sanchez' },
+  { first: 'Nancy', last: 'Clark' }, { first: 'Anthony', last: 'Ramirez' }, { first: 'Karen', last: 'Lewis' },
+  { first: 'Mark', last: 'Robinson' }, { first: 'Betty', last: 'Walker' }, { first: 'Donald', last: 'Young' },
+  { first: 'Sandra', last: 'Hall' }, { first: 'Steven', last: 'Allen' }, { first: 'Dorothy', last: 'King' },
+  { first: 'Paul', last: 'Wright' }, { first: 'Carol', last: 'Scott' }, { first: 'Andrew', last: 'Green' },
+  { first: 'Ruth', last: 'Baker' }, { first: 'Joshua', last: 'Adams' }, { first: 'Sharon', last: 'Nelson' },
+  { first: 'Kenneth', last: 'Hill' }, { first: 'Laura', last: 'Campbell' }, { first: 'Kevin', last: 'Mitchell' },
+  { first: 'Donna', last: 'Roberts' }, { first: 'Brian', last: 'Carter' }, { first: 'Michelle', last: 'Phillips' },
+  { first: 'George', last: 'Evans' }, { first: 'Patricia', last: 'Turner' }, { first: 'Edward', last: 'Torres' },
+  { first: 'Linda', last: 'Parker' }, { first: 'Ronald', last: 'Collins' }, { first: 'Barbara', last: 'Edwards' },
+  { first: 'Timothy', last: 'Stewart' }, { first: 'Susan', last: 'Flores' }, { first: 'Jason', last: 'Morris' },
+]
+
+/** Exported for preview table in events page. */
+export function getProfileEmailAndName(index, domain = 'klaviyo-dummy.com') {
+  const name = DEMO_PROFILE_NAMES[index % DEMO_PROFILE_NAMES.length]
+  const first = name.first.toLowerCase().replace(/\s+/g, '')
+  const last = name.last.toLowerCase().replace(/\s+/g, '')
+  const base = `${first}.${last}`
+  const email = index < DEMO_PROFILE_NAMES.length
+    ? `${base}@${domain}`
+    : `${base}.${String(index + 1).padStart(3, '0')}@${domain}`
+  return { email, firstName: name.first, lastName: name.last }
 }
 
 /**
@@ -154,12 +192,6 @@ function buildLineItems(journeyType, catalog, orderIndex, opts = {}) {
   return items
 }
 
-/** Placeholder location for in-store (later: from catalog or user-defined). */
-const DEFAULT_INSTORE_LOCATION = {
-  location_id: 'loc_001',
-  location_name: 'Main Store',
-  location_address: '123 Main St, City, ST 12345',
-}
 
 /**
  * Generate events for the selected journey and options.
@@ -205,7 +237,7 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
     : Array.from({ length: profilesCount }, (_, i) => makeId('01J', i + 1))
   const profileEmails = useProvidedProfiles
     ? options.profileEmails
-    : profileIds.map((id, i) => `profile-${String(i + 1).padStart(3, '0')}@${PROFILE_EMAIL_DOMAIN}`)
+    : profileIds.map((id, i) => getProfileEmailAndName(i, PROFILE_EMAIL_DOMAIN).email)
   const totalRuns = profileIds.length * journeysPerProfile
   const productsPerOrderOpts = (options.productsPerOrderMin != null || options.productsPerOrderMax != null)
     ? { productsPerOrderMin: options.productsPerOrderMin ?? 1, productsPerOrderMax: options.productsPerOrderMax ?? 3 }
@@ -248,11 +280,14 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
         : stepCount * 15 * MIN_MS
   const usableRangeMs = Math.max(0, rangeMs - reserveEndMs)
 
+  const locationsList = getLocationsList(catalog)
+
   for (let run = 0; run < totalRuns; run++) {
     const profileIndex = Math.floor(run / journeysPerProfile)
     const profileId = profileIds[profileIndex]
     const profileEmail = profileEmails[profileIndex]
     const runStartMs = startMs + (run / Math.max(1, totalRuns)) * usableRangeMs
+    const runLocation = toEventLocation(pickRandom(locationsList, null))
 
     const runLineItemsByOrderIndex = []
     for (let o = 0; o < countOrderLineItemSets; o++) {
@@ -319,7 +354,7 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
           events.push({
             id: makeId('evt_', ++eventIndex),
             time: timestamp,
-            metric_name: DUMMY_EVENT_PREFIX + 'Ordered Product',
+            metric_name: KD('Ordered Product'),
             eventName: 'Ordered Product',
             profileId,
             profileEmail,
@@ -348,7 +383,7 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
         const payload = {
           id: makeId('evt_', ++eventIndex),
           time: timestamp,
-          metric_name: DUMMY_EVENT_PREFIX + 'Placed Order',
+          metric_name: KD('Placed Order'),
           eventName: 'Placed Order',
           profileId,
           profileEmail,
@@ -362,7 +397,7 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
           source,
           OrderType: orderType,
         }
-        if (source === 'instore') Object.assign(payload, DEFAULT_INSTORE_LOCATION)
+        if (source === 'instore' && runLocation) Object.assign(payload, runLocation)
         events.push(payload)
         orderIndex++
         continue
@@ -373,7 +408,7 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
           events.push({
             id: makeId('evt_', ++eventIndex),
             time: timestamp,
-            metric_name: DUMMY_EVENT_PREFIX + 'Viewed Product',
+            metric_name: KD('Viewed Product'),
             eventName: 'Viewed Product',
             profileId,
             profileEmail,
@@ -390,7 +425,7 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
           events.push({
             id: makeId('evt_', ++eventIndex),
             time: timestamp,
-            metric_name: DUMMY_EVENT_PREFIX + 'Added to Cart',
+            metric_name: KD('Added to Cart'),
             eventName: 'Added to Cart',
             profileId,
             profileEmail,
@@ -410,7 +445,7 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
         events.push({
           id: makeId('evt_', ++eventIndex),
           time: timestamp,
-          metric_name: DUMMY_EVENT_PREFIX + 'Started Checkout',
+          metric_name: KD('Started Checkout'),
           eventName: 'Started Checkout',
           profileId,
           profileEmail,
@@ -428,7 +463,7 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
       const orderPayload = {
         id: makeId('evt_', ++eventIndex),
         time: timestamp,
-        metric_name: DUMMY_EVENT_PREFIX + item.eventName,
+        metric_name: KD(item.eventName),
         eventName: item.eventName,
         profileId,
         profileEmail,
@@ -444,7 +479,10 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
           orderPayload.value = lastOrderValue
           orderPayload.valueCurrency = lastOrderCurrency
         }
-        if (orderSource === 'instore') Object.assign(orderPayload, DEFAULT_INSTORE_LOCATION)
+        if (orderSource === 'instore' && runLocation) Object.assign(orderPayload, runLocation)
+      }
+      if (['Booking Checked in', 'Booking Attended', 'Booking Created'].includes(item.eventName) && runLocation) {
+        Object.assign(orderPayload, runLocation)
       }
       events.push(orderPayload)
     }

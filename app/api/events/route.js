@@ -1,9 +1,42 @@
 import { NextResponse } from 'next/server'
 import { getApiKeyFromRequest, appendApiKeyData } from '@/lib/serverStorage'
+import { getKlaviyoClientHeaders } from '@/lib/klaviyoPayloads'
 
-// Generate a mock Klaviyo event ID
+const KLAVIYO_CLIENT_BASE = 'https://a.klaviyo.com/client'
+
+// Generate a mock event ID for local storage when Klaviyo returns empty body
 function generateEventId() {
   return `01E${Math.random().toString(36).substring(2, 15).toUpperCase()}`
+}
+
+/**
+ * Create an event in Klaviyo via the Client API.
+ * See docs/klaviyo-client-api.md.
+ */
+async function createKlaviyoEvent(companyId, payload) {
+  const url = `${KLAVIYO_CLIENT_BASE}/events?company_id=${encodeURIComponent(companyId)}`
+  let res
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: getKlaviyoClientHeaders(),
+      body: JSON.stringify(payload),
+    })
+  } catch (err) {
+    console.error('[Klaviyo Client API] events fetch error:', err.message)
+    return { ok: false, status: 502, data: { errors: [{ detail: `Network error: ${err.message}` }] } }
+  }
+  const text = await res.text()
+  let json
+  try {
+    json = text ? JSON.parse(text) : {}
+  } catch {
+    json = {}
+  }
+  if (!res.ok) {
+    console.error('[Klaviyo Client API] events error:', res.status, text?.slice(0, 500))
+  }
+  return { ok: res.ok, status: res.status, data: json }
 }
 
 export async function POST(request) {
@@ -54,60 +87,43 @@ export async function POST(request) {
       )
     }
 
-    // Generate event ID
-    const eventId = generateEventId()
-    const metricName = attributes.metric.data.attributes.name
+    // Forward to Klaviyo Client API (payload is already in Client API shape from buildKlaviyoEventPayload)
+    const { ok, status, data: klaviyoResponse } = await createKlaviyoEvent(apiKey, body)
 
-    // Ensure metric name has TEST prefix if not already present
-    const finalMetricName = metricName.startsWith('TEST ') || metricName.startsWith('TEST_')
-      ? metricName
-      : `TEST ${metricName}`
+    if (!ok) {
+      const errors = klaviyoResponse?.errors || [{ detail: klaviyoResponse?.detail || klaviyoResponse?.message || 'Klaviyo API error' }]
+      return NextResponse.json(
+        { errors: Array.isArray(errors) ? errors : [errors] },
+        { status: status >= 400 ? status : 502, headers: { 'Content-Type': 'application/vnd.api+json' } }
+      )
+    }
 
-    // Create event object
+    // Build event record for local storage (so GET /api/events still shows sent events)
+    const eventId = klaviyoResponse?.data?.id || generateEventId()
     const event = {
       type: 'event',
       id: eventId,
       attributes: {
         properties: attributes.properties || {},
-        metric: {
-          data: {
-            type: 'metric',
-            attributes: {
-              name: finalMetricName,
-            },
-          },
-        },
-        profile: {
-          data: {
-            type: 'profile',
-            id: profileData.id || null,
-            attributes: {
-              email: profileAttrs.email || null,
-              phone_number: profileAttrs.phone_number || null,
-              external_id: profileAttrs.external_id || null,
-              properties: profileAttrs.properties || {},
-            },
-          },
-        },
+        metric: attributes.metric,
+        profile: attributes.profile,
         time: attributes.time || new Date().toISOString(),
-        value: attributes.value || null,
-        value_currency: attributes.value_currency || null,
-        unique_id: attributes.unique_id || null,
+        value: attributes.value ?? null,
+        value_currency: attributes.value_currency ?? null,
+        unique_id: attributes.unique_id ?? null,
         datetime: attributes.time || new Date().toISOString(),
       },
       relationships: {},
     }
-
-    // Store in storage
     appendApiKeyData(apiKey, 'events', event)
 
+    // Return Klaviyo response if it has data; otherwise synthetic success
+    const responseData = klaviyoResponse?.data ?? event
     return NextResponse.json(
-      { data: event },
+      { data: responseData },
       {
         status: 201,
-        headers: {
-          'Content-Type': 'application/vnd.api+json',
-        },
+        headers: { 'Content-Type': 'application/vnd.api+json' },
       }
     )
   } catch (error) {

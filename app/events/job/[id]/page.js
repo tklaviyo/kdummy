@@ -4,6 +4,9 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import React, { useMemo, useState } from 'react'
 import Navigation from '@/components/Navigation'
+import { apiClient } from '@/lib/apiClient'
+import { buildKlaviyoEventPayload } from '@/lib/klaviyoPayloads'
+import { useConfirm } from '@/context/ConfirmContext'
 
 const RUN_HISTORY_KEY = 'kdummy_event_runs'
 
@@ -42,9 +45,12 @@ function flattenExamples(examplesByEventName) {
 
 export default function EventJobDetailPage() {
   const params = useParams()
+  const { alert } = useConfirm()
   const jobId = params?.id
   const [detailTab, setDetailTab] = useState('events') // 'profiles' | 'events'
   const [eventDetailModal, setEventDetailModal] = useState(null) // event object or null
+  const [sendingEvents, setSendingEvents] = useState(false)
+  const [sendEventsResult, setSendEventsResult] = useState(null) // { sent, failed }
 
   const run = useMemo(() => {
     if (!jobId) return null
@@ -62,6 +68,36 @@ export default function EventJobDetailPage() {
   const hasFullEvents = run && Array.isArray(run.events)
   const totalEventsFromSummary = run?.jobSummary?.totalEvents ?? 0
   const showingSampleOnly = !hasFullEvents && totalEventsFromSummary > flatEvents.length
+
+  const handleSendEventsToApi = async () => {
+    if (flatEvents.length === 0) {
+      await alert('No events to send.')
+      return
+    }
+    setSendingEvents(true)
+    setSendEventsResult(null)
+    let sent = 0
+    let failed = 0
+    try {
+      for (const ev of flatEvents) {
+        try {
+          const payload = buildKlaviyoEventPayload(ev)
+          const res = await apiClient.createEvent(payload.data)
+          if (res.ok) sent++
+          else failed++
+        } catch {
+          failed++
+        }
+      }
+      setSendEventsResult({ sent, failed })
+      if (failed === 0) await alert(`Sent ${sent} event(s) to the API.`)
+      else await alert(`Sent ${sent} event(s). ${failed} failed.`)
+    } catch (e) {
+      await alert(e?.message || 'Failed to send events.')
+    } finally {
+      setSendingEvents(false)
+    }
+  }
 
   if (!jobId || !run) {
     return (
@@ -207,9 +243,26 @@ export default function EventJobDetailPage() {
 
               {detailTab === 'events' && (
                 <div>
-                  <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-2">
-                    Events {hasFullEvents ? `(${flatEvents.length})` : '(sample)'}
-                  </h2>
+                  <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                    <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">
+                      Events {hasFullEvents ? `(${flatEvents.length})` : '(sample)'}
+                    </h2>
+                    {flatEvents.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleSendEventsToApi}
+                        disabled={sendingEvents}
+                        className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
+                      >
+                        {sendingEvents ? 'Sending…' : 'Send events to API'}
+                      </button>
+                    )}
+                  </div>
+                  {sendEventsResult && (
+                    <p className="text-sm text-gray-600 mb-2">
+                      Last run: {sendEventsResult.sent} sent{sendEventsResult.failed > 0 ? `, ${sendEventsResult.failed} failed` : ''}.
+                    </p>
+                  )}
                   {showingSampleOnly && (
                     <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-4">
                       This run was saved before the full event list was stored. Showing a sample only ({flatEvents.length} of {totalEventsFromSummary} events). New runs will show all events.

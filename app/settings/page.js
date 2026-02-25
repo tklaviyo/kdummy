@@ -18,7 +18,8 @@ export default function SettingsPage() {
   const [showAddForm, setShowAddForm] = useState(false)
   const [formData, setFormData] = useState({
     accountName: '',
-    apiKey: ''
+    apiKey: '',
+    listId: ''
   })
   const [editingKey, setEditingKey] = useState(null)
 
@@ -36,6 +37,11 @@ export default function SettingsPage() {
     setAccounts(accountsList)
     const active = getActiveApiKey()
     setActiveApiKeyState(active)
+    // When there's only one account, set it as active by default
+    if (accountsList.length === 1 && active !== accountsList[0].apiKey) {
+      setActiveApiKey(accountsList[0].apiKey)
+      setActiveApiKeyState(accountsList[0].apiKey)
+    }
   }
 
   const handleAddAccount = async () => {
@@ -54,12 +60,18 @@ export default function SettingsPage() {
     const account = {
       accountName: formData.accountName.trim(),
       apiKey: formData.apiKey.trim(),
+      listId: (formData.listId || '').trim() || undefined,
       createdAt: new Date().toISOString()
     }
 
     saveAccount(account)
+    const hadNoAccounts = accounts.length === 0
     loadAccounts()
-    setFormData({ accountName: '', apiKey: '' })
+    if (hadNoAccounts) {
+      setActiveApiKey(account.apiKey)
+      setActiveApiKeyState(account.apiKey)
+    }
+    setFormData({ accountName: '', apiKey: '', listId: '' })
     setShowAddForm(false)
   }
 
@@ -67,7 +79,8 @@ export default function SettingsPage() {
     setEditingKey(account.apiKey)
     setFormData({
       accountName: account.accountName,
-      apiKey: account.apiKey
+      apiKey: account.apiKey,
+      listId: account.listId || ''
     })
     setShowAddForm(true)
   }
@@ -95,6 +108,7 @@ export default function SettingsPage() {
     const account = {
       accountName: formData.accountName.trim(),
       apiKey: formData.apiKey.trim(),
+      listId: (formData.listId || '').trim() || undefined,
       createdAt: accounts.find(a => a.apiKey === editingKey)?.createdAt || new Date().toISOString()
     }
 
@@ -106,7 +120,7 @@ export default function SettingsPage() {
     }
     
     loadAccounts()
-    setFormData({ accountName: '', apiKey: '' })
+    setFormData({ accountName: '', apiKey: '', listId: '' })
     setShowAddForm(false)
     setEditingKey(null)
   }
@@ -124,7 +138,7 @@ export default function SettingsPage() {
   }
 
   const handleCancel = () => {
-    setFormData({ accountName: '', apiKey: '' })
+    setFormData({ accountName: '', apiKey: '', listId: '' })
     setShowAddForm(false)
     setEditingKey(null)
   }
@@ -185,13 +199,7 @@ export default function SettingsPage() {
 
                 {accounts.length === 0 ? (
                   <div className="text-center py-12">
-                    <p className="text-gray-500 mb-4">No accounts configured</p>
-                    <button
-                      onClick={() => setShowAddForm(true)}
-                      className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-                    >
-                      Add Your First Account
-                    </button>
+                    <p className="text-gray-500">No accounts configured</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -219,6 +227,11 @@ export default function SettingsPage() {
                             <p className="text-sm text-gray-600 font-mono mb-2">
                               {account.apiKey}
                             </p>
+                            {account.listId && (
+                              <p className="text-xs text-gray-600 font-mono mb-1">
+                                List ID: {account.listId}
+                              </p>
+                            )}
                             <p className="text-xs text-gray-500">
                               Added: {new Date(account.createdAt).toLocaleDateString()}
                             </p>
@@ -281,11 +294,29 @@ export default function SettingsPage() {
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
                         disabled={!!editingKey}
                       />
+                      <p className="mt-1 text-xs text-gray-500">
+                        Use your Klaviyo public/company API key. Generated profiles are sent to your Klaviyo account.
+                      </p>
                       {editingKey && (
                         <p className="mt-1 text-xs text-gray-500">
                           API key cannot be changed. Delete and recreate to change it.
                         </p>
                       )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        List ID
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.listId}
+                        onChange={(e) => setFormData({ ...formData, listId: e.target.value })}
+                        placeholder="e.g. ABC123 (required for Subscribe API)"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        Required for Subscribe API (email, SMS, WhatsApp).
+                      </p>
                     </div>
                     <div className="flex gap-3">
                       <button
