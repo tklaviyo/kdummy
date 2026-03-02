@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getApiKeyFromRequest, getApiKeyDataType, setApiKeyDataType } from '@/lib/serverStorage'
 
-// Profile property templates - these are the original defaults (group: general | locations | preferences | subscriptions | bookings | loyalty | other)
+// Profile property templates - static only (group: general | preferences | loyalty)
 const originalDefaultPropertyTemplates = {
   gender: {
     name: 'gender',
@@ -21,6 +21,9 @@ const originalDefaultPropertyTemplates = {
     required: false,
     object_property_mapping: null,
     group: 'general',
+    date_range_preset: 'custom',
+    date_min: '1960-01-01',
+    date_max: '2005-12-31',
   },
   signup_date: {
     name: 'signup_date',
@@ -30,6 +33,9 @@ const originalDefaultPropertyTemplates = {
     required: false,
     object_property_mapping: null,
     group: 'general',
+    date_range_preset: 'last_12_months',
+    date_min: null,
+    date_max: null,
   },
   marketing_preferences: {
     name: 'marketing_preferences',
@@ -41,36 +47,6 @@ const originalDefaultPropertyTemplates = {
     object_property_mapping: null,
     group: 'preferences',
   },
-  signup_store: {
-    name: 'signup_store',
-    type: 'string',
-    description: 'Store where profile signed up',
-    default_value: null,
-    catalog_source: 'stores',
-    required: false,
-    object_property_mapping: null,
-    group: 'locations',
-  },
-  favorite_store: {
-    name: 'favorite_store',
-    type: 'string',
-    description: 'Favorite store location',
-    default_value: null,
-    catalog_source: 'stores',
-    required: false,
-    object_property_mapping: null,
-    group: 'locations',
-  },
-  recent_store: {
-    name: 'recent_store',
-    type: 'string',
-    description: 'Recent store location',
-    default_value: null,
-    catalog_source: 'stores',
-    required: false,
-    object_property_mapping: null,
-    group: 'locations',
-  },
   loyalty_member: {
     name: 'loyalty_member',
     type: 'boolean',
@@ -80,51 +56,12 @@ const originalDefaultPropertyTemplates = {
     object_property_mapping: null,
     group: 'loyalty',
   },
-  loyalty_signup_date: {
-    name: 'loyalty_signup_date',
-    type: 'date',
-    description: 'Date when profile signed up for loyalty program',
-    default_value: null,
-    required: false,
-    object_property_mapping: null,
-    group: 'loyalty',
-  },
-  current_loyalty_tier: {
-    name: 'current_loyalty_tier',
+  loyalty_tier: {
+    name: 'loyalty_tier',
     type: 'string',
-    description: 'Current loyalty tier level',
+    description: 'Loyalty tier level',
     default_value: null,
-    catalog_source: 'loyalty',
-    required: false,
-    object_property_mapping: null,
-    group: 'loyalty',
-  },
-  next_loyalty_tier: {
-    name: 'next_loyalty_tier',
-    type: 'string',
-    description: 'Next loyalty tier to achieve',
-    default_value: null,
-    catalog_source: 'loyalty',
-    required: false,
-    object_property_mapping: null,
-    group: 'loyalty',
-  },
-  loyalty_points: {
-    name: 'loyalty_points',
-    type: 'integer',
-    description: 'Current loyalty points balance',
-    default_value: 0,
-    catalog_source: 'loyalty',
-    required: false,
-    object_property_mapping: null,
-    group: 'loyalty',
-  },
-  loyalty_spend: {
-    name: 'loyalty_spend',
-    type: 'decimal',
-    description: 'Total loyalty program spending',
-    default_value: 0,
-    catalog_source: 'loyalty',
+    options: ['Bronze', 'Silver', 'Gold', 'Platinum'],
     required: false,
     object_property_mapping: null,
     group: 'loyalty',
@@ -132,23 +69,33 @@ const originalDefaultPropertyTemplates = {
 }
 
 function getDefaultPropertyTemplates(apiKey) {
-  // Get stored defaults for this API key, or initialize with originals
   const storedDefaults = getApiKeyDataType(apiKey, 'profile_properties_defaults', null)
-  const defaultPropertyTemplates = storedDefaults || JSON.parse(JSON.stringify(originalDefaultPropertyTemplates))
-  
-  // Merge defaults with any modifications, preserving original_name.
-  // Omit keys that are no longer in the original set (e.g. product_preferences).
+  // Start from original so every current default (e.g. loyalty_tier) is always included; overlay stored per-key
+  const originalCopy = JSON.parse(JSON.stringify(originalDefaultPropertyTemplates))
+  const defaultPropertyTemplates = storedDefaults
+    ? Object.fromEntries(
+        Object.keys(originalCopy).map((key) => [
+          key,
+          storedDefaults[key] != null ? { ...originalCopy[key], ...storedDefaults[key] } : originalCopy[key],
+        ])
+      )
+    : originalCopy
+
   const templates = {}
-  Object.keys(defaultPropertyTemplates).forEach(key => {
+  Object.keys(defaultPropertyTemplates).forEach((key) => {
     const original = originalDefaultPropertyTemplates[key]
-    if (!original) return // drop deprecated keys
+    if (!original) return
     const current = defaultPropertyTemplates[key]
-    templates[current.name] = {
+    const merged = {
       ...current,
       original_name: original.name,
       enabled: current.enabled !== undefined ? current.enabled : true,
       group: current.group || original?.group || 'other',
     }
+    if (merged.type === 'date' && merged.date_range_preset == null) {
+      merged.date_range_preset = 'custom'
+    }
+    templates[current.name] = merged
   })
   return templates
 }
@@ -218,23 +165,21 @@ export async function POST(request) {
       )
     }
 
-    const objectProp = data.object_property_mapping?.trim() || null
-    const validMapping = objectProp === 'id' || objectProp === 'name' ? objectProp : null
-
     const property = {
       name: data.name,
       type: data.type,
       description: data.description || '',
       default_value: data.default_value || null,
       options: data.options || null,
-      catalog_source: data.catalog_source || null,
-      catalog_template: data.catalog_template || null,
+      catalog_source: null,
+      catalog_template: null,
       required: data.required || false,
-      object_property_mapping: validMapping,
+      object_property_mapping: null,
       enabled: data.enabled !== undefined ? data.enabled : true,
       group: data.group || 'other',
       date_min: data.date_min || null,
       date_max: data.date_max || null,
+      date_range_preset: data.date_range_preset || null,
       integer_min: data.integer_min != null && data.integer_min !== '' ? data.integer_min : null,
       integer_max: data.integer_max != null && data.integer_max !== '' ? data.integer_max : null,
       array_min_items: data.array_min_items != null && data.array_min_items !== '' ? parseInt(data.array_min_items, 10) : null,
@@ -320,14 +265,15 @@ export async function PUT(request) {
         description: data.description || '',
         default_value: data.default_value || null,
         options: data.options || null,
-        catalog_source: data.catalog_source || null,
-        catalog_template: data.catalog_template || null,
+        catalog_source: null,
+        catalog_template: null,
         required: data.required || false,
         object_property_mapping: validMapping,
         enabled: data.enabled !== undefined ? data.enabled : (defaultPropertyTemplates[originalName]?.enabled !== undefined ? defaultPropertyTemplates[originalName].enabled : true),
         group: data.group || defaultPropertyTemplates[originalName]?.group || originalTemplate.group || 'other',
         date_min: data.date_min || null,
         date_max: data.date_max || null,
+        date_range_preset: data.date_range_preset || null,
         integer_min: data.integer_min != null && data.integer_min !== '' ? data.integer_min : null,
         integer_max: data.integer_max != null && data.integer_max !== '' ? data.integer_max : null,
         array_min_items: data.array_min_items != null && data.array_min_items !== '' ? parseInt(data.array_min_items, 10) : null,
@@ -370,14 +316,15 @@ export async function PUT(request) {
         description: data.description || '',
         default_value: data.default_value || null,
         options: data.options || null,
-        catalog_source: data.catalog_source || null,
-        catalog_template: data.catalog_template || null,
+        catalog_source: null,
+        catalog_template: null,
         required: data.required || false,
         object_property_mapping: validMapping,
         enabled: data.enabled !== undefined ? data.enabled : (customProperties[oldName]?.enabled !== undefined ? customProperties[oldName].enabled : true),
         group: data.group || customProperties[oldName]?.group || 'other',
         date_min: data.date_min || null,
         date_max: data.date_max || null,
+        date_range_preset: data.date_range_preset || null,
         integer_min: data.integer_min != null && data.integer_min !== '' ? data.integer_min : null,
         integer_max: data.integer_max != null && data.integer_max !== '' ? data.integer_max : null,
         array_min_items: data.array_min_items != null && data.array_min_items !== '' ? parseInt(data.array_min_items, 10) : null,

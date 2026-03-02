@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { generateEmail, generateExternalId, generateDate, generatePropertyValue } from '@/lib/utils'
+import { generateEmail, generateExternalId, generateDate, generatePropertyValue, getDateRangeFromPreset } from '@/lib/utils'
 import { getNameByGender, getConsistentLocation, generatePhoneFromLocation, generateAddressFromLocation } from '@/lib/consistentData'
 import { getLocationsForCountries, getRandomLocationFromCountries } from '@/lib/locationGenerator'
 import { generatePhoneFromCountry } from '@/lib/countryUtils'
@@ -11,6 +11,7 @@ import { useConfirm } from '@/context/ConfirmContext'
 import { buildKlaviyoProfilePayload, buildKlaviyoSubscriptionPayload, channelsToConsent } from '@/lib/klaviyoPayloads'
 import { groupProperties, isDefaultProfileProperty } from '@/lib/profilePropertyGroups'
 import { getCatalogItemsForSource } from '@/lib/defaultCatalogTemplates'
+import useRepeatOnHold from '@/lib/useRepeatOnHold'
 
 export default function GenerateProfilesTab() {
   const router = useRouter()
@@ -285,8 +286,9 @@ export default function GenerateProfilesTab() {
       case 'boolean':
         return generatePropertyValue('boolean', prop.name)
       case 'date': {
-        const dateMin = prop.date_min || '1970-01-01'
-        const dateMax = prop.date_max || new Date().toISOString().split('T')[0]
+        const range = getDateRangeFromPreset(prop.date_range_preset)
+        const dateMin = range ? range.startDate : (prop.date_min || '1970-01-01')
+        const dateMax = range ? range.endDate : (prop.date_max || new Date().toISOString().split('T')[0])
         return generateDate(dateMin, dateMax)
       }
       case 'array':
@@ -382,11 +384,13 @@ export default function GenerateProfilesTab() {
           case 'boolean':
             value = generatePropertyValue('boolean', prop.name)
             break
-          case 'date':
-            const dateMin = prop.date_min || '1970-01-01'
-            const dateMax = prop.date_max || new Date().toISOString().split('T')[0]
+          case 'date': {
+            const range = getDateRangeFromPreset(prop.date_range_preset)
+            const dateMin = range ? range.startDate : (prop.date_min || '1970-01-01')
+            const dateMax = range ? range.endDate : (prop.date_max || new Date().toISOString().split('T')[0])
             value = generateDate(dateMin, dateMax)
             break
+          }
           case 'array':
             if (prop.options && prop.options.length > 0 && !prop.catalog_source) {
               const minN = prop.array_min_items != null ? Math.max(0, parseInt(prop.array_min_items, 10)) : 0

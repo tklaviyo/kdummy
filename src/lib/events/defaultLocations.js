@@ -1,14 +1,15 @@
 /**
- * Default locations used when the data catalog has no locations (e.g. no custom locations created).
+ * Default locations used when no custom locations exist, or as generic options.
  * Same shape as catalog locations: id, name, and optional address parts for event payloads.
- * Used for in-store order events and booking (check-in) events so location_id/location_name
- * can power profile properties (e.g. favorite_store, last_purchase_location).
+ * Generic names so they work for any business type (retail, services, offices, etc.).
  */
 
 export const DEFAULT_EVENT_LOCATIONS = [
-  { id: 'LOC-001', name: 'Main Store', address: '123 Main St', city: 'City', state: 'ST', country: 'United States', postcode: '12345' },
-  { id: 'LOC-002', name: 'Downtown Location', address: '456 Central Ave', city: 'City', state: 'ST', country: 'United States', postcode: '12346' },
-  { id: 'LOC-003', name: 'Mall Store', address: '789 Mall Dr', city: 'City', state: 'ST', country: 'United States', postcode: '12347' },
+  { id: 'LOC-001', name: 'Location 1', address: '123 Main St', city: 'City', state: 'ST', country: 'United States', postcode: '12345' },
+  { id: 'LOC-002', name: 'Location 2', address: '456 Central Ave', city: 'City', state: 'ST', country: 'United States', postcode: '12346' },
+  { id: 'LOC-003', name: 'Location 3', address: '789 Oak Blvd', city: 'City', state: 'ST', country: 'United States', postcode: '12347' },
+  { id: 'LOC-004', name: 'Location 4', address: '100 Park Rd', city: 'City', state: 'ST', country: 'United States', postcode: '12348' },
+  { id: 'LOC-005', name: 'Location 5', address: '200 River Dr', city: 'City', state: 'ST', country: 'United States', postcode: '12349' },
 ]
 
 /**
@@ -20,7 +21,7 @@ export function toEventLocation(loc) {
   if (!loc) {
     return {
       location_id: 'loc_001',
-      location_name: 'Main Store',
+      location_name: 'Location 1',
       location_address: '123 Main St, City, ST 12345',
     }
   }
@@ -34,18 +35,20 @@ export function toEventLocation(loc) {
   const parts = [loc.address, loc.city, loc.state, loc.postcode, loc.country].filter(Boolean)
   return {
     location_id: loc.id != null ? String(loc.id) : 'loc_001',
-    location_name: loc.name != null ? String(loc.name) : 'Main Store',
+    location_name: loc.name != null ? String(loc.name) : 'Location 1',
     location_address: parts.length ? parts.join(', ') : (loc.address || ''),
   }
 }
 
 /**
- * Get the list of locations to use for event generation: catalog locations or defaults.
+ * Get the list of locations to use for event generation.
+ * When catalog.locations is explicitly an array (including empty), use it; otherwise use defaults.
+ * Pass an empty array when locations should not be included in events.
  * @param {{ locations?: object[] }} catalog
  * @returns {object[]}
  */
 export function getLocationsList(catalog) {
   const list = catalog?.locations
-  if (Array.isArray(list) && list.length > 0) return list
+  if (Array.isArray(list)) return list
   return DEFAULT_EVENT_LOCATIONS
 }

@@ -4,12 +4,14 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Navigation from '@/components/Navigation'
+import { useRepeatOnHold } from '@/lib/useRepeatOnHold'
 import { JOURNEYS, getJourneyById, getUniqueEventNamesForJourney, getJourneysByType, getJourneyIdFromTypeAndVariant, isProductJourneyType } from '@/src/lib/events/journeyDefinitions'
 import { getEventDescription } from '@/src/lib/events/eventDefinitions'
 import { generateEvents, getProfileEmailAndName } from '@/src/lib/events/generateEvents'
 import { buildSampleEventProperties } from '@/src/lib/events/eventPropertiesSchema'
 import { samplePropertiesToKlaviyoEventPayload, buildKlaviyoEventPayload } from '@/lib/klaviyoPayloads'
 import { getTimingProfile, TIMING_PROFILES } from '@/src/lib/events/journeyTimings'
+import { DEFAULT_EVENT_LOCATIONS } from '@/src/lib/events/defaultLocations'
 import { loadCatalog } from '@/src/catalog/storage'
 import { getBusinessTypesByTemplate, getBusinessTypeById, getCatalogItemsFromBusinessType } from '@/src/catalog/businessTypes'
 import { getTemplate } from '@/src/catalog/schema'
@@ -86,18 +88,21 @@ export default function EventsPage() {
   const [journeyType, setJourneyType] = useState('ecommerce_online')
   const [journeyVariant, setJourneyVariant] = useState('full')
   const [selectedEventNames, setSelectedEventNames] = useState([])
-  const [journeyCount, setJourneyCount] = useState(1)
-  const [profilesCount, setProfilesCount] = useState(5)
+  const [journeyCount, setJourneyCount] = useState('1')
+  const [profilesCount, setProfilesCount] = useState('5')
   const [dateRange, setDateRange] = useState('12months')
   const [dataSourceProducts, setDataSourceProducts] = useState(DATA_SOURCE_INDUSTRY)
-  const [dataSourceServices, setDataSourceServices] = useState(DATA_SOURCE_CATALOG)
-  const [dataSourceSubscriptions, setDataSourceSubscriptions] = useState(DATA_SOURCE_CATALOG)
+  const [dataSourceServices, setDataSourceServices] = useState(DATA_SOURCE_INDUSTRY)
+  const [dataSourceSubscriptions, setDataSourceSubscriptions] = useState(DATA_SOURCE_INDUSTRY)
   const [industryProducts, setIndustryProducts] = useState('apparel')
   const [industryServices, setIndustryServices] = useState('')
   const [industrySubscriptions, setIndustrySubscriptions] = useState('')
   const [selectedProductIds, setSelectedProductIds] = useState([])
   const [selectedServiceIds, setSelectedServiceIds] = useState([])
   const [selectedSubscriptionIds, setSelectedSubscriptionIds] = useState([])
+  const [selectedLocationIds, setSelectedLocationIds] = useState([])
+  const [includeLocationsInEvents, setIncludeLocationsInEvents] = useState(false)
+  const [locationDataSource, setLocationDataSource] = useState('default')
   const [runHistory, setRunHistory] = useState([])
   const [selectedJobIds, setSelectedJobIds] = useState(new Set())
   const [catalogFromStorage, setCatalogFromStorage] = useState({ products: [], services: [], subscriptions: [] })
@@ -116,16 +121,31 @@ export default function EventsPage() {
     router.replace(`/events?tab=${tab}`)
   }, [router])
   const [generateStep, setGenerateStep] = useState('setup') // 'setup' | 'confirm'
+  const [showReviewModal, setShowReviewModal] = useState(false)
   const [sendingToKlaviyo, setSendingToKlaviyo] = useState(false)
   const linearDefaults = getTimingProfile('ecommerce_linear') || TIMING_PROFILES.ecommerce_linear
   const [timingStepMin, setTimingStepMin] = useState(linearDefaults?.stepMinutesMin ?? 2)
   const [timingStepMax, setTimingStepMax] = useState(linearDefaults?.stepMinutesMax ?? 10)
+  const bookingSpacedDefaults = getTimingProfile('booking_spaced') || TIMING_PROFILES.booking_spaced
+  const defaultSessionDays = bookingSpacedDefaults?.bookingAtDaysFromCreate ?? 3
+  const [bookingSessionDaysMin, setBookingSessionDaysMin] = useState(String(defaultSessionDays))
+  const [bookingSessionDaysMax, setBookingSessionDaysMax] = useState(String(defaultSessionDays))
   const [profileMode, setProfileMode] = useState('auto') // 'auto' | 'selected'
   const [selectedProfileIds, setSelectedProfileIds] = useState([])
   const [availableProfiles, setAvailableProfiles] = useState([])
   const [profilesLoadError, setProfilesLoadError] = useState(null)
-  const [productsPerOrderMin, setProductsPerOrderMin] = useState(1)
-  const [productsPerOrderMax, setProductsPerOrderMax] = useState(3)
+  const [productsPerOrderMin, setProductsPerOrderMin] = useState('1')
+  const [productsPerOrderMax, setProductsPerOrderMax] = useState('3')
+
+  const journeyCountNum = useMemo(() => Math.max(1, Math.min(10, parseInt(journeyCount, 10) || 1)), [journeyCount])
+  const profilesCountNum = useMemo(() => Math.max(1, Math.min(50, parseInt(profilesCount, 10) || 5)), [profilesCount])
+  const productsPerOrderMinNum = useMemo(() => Math.max(1, Math.min(10, parseInt(productsPerOrderMin, 10) || 1)), [productsPerOrderMin])
+  const productsPerOrderMaxNum = useMemo(() => Math.max(productsPerOrderMinNum, Math.min(10, parseInt(productsPerOrderMax, 10) || 3)), [productsPerOrderMax, productsPerOrderMinNum])
+
+  const journeyDecHold = useRepeatOnHold(useCallback(() => setJourneyCount((c) => String(Math.max(1, Math.min(10, (parseInt(c, 10) || 1) - 1)))), []))
+  const journeyIncHold = useRepeatOnHold(useCallback(() => setJourneyCount((c) => String(Math.min(10, (parseInt(c, 10) || 1) + 1))), []))
+  const profilesDecHold = useRepeatOnHold(useCallback(() => setProfilesCount((c) => String(Math.max(1, Math.min(50, (parseInt(c, 10) || 5) - 1)))), []))
+  const profilesIncHold = useRepeatOnHold(useCallback(() => setProfilesCount((c) => String(Math.min(50, (parseInt(c, 10) || 5) + 1))), []))
 
   const selectedJourneyId = getJourneyIdFromTypeAndVariant(journeyType, journeyVariant) || getJourneysByType(journeyType)[0]?.id
   const journey = getJourneyById(selectedJourneyId)
@@ -154,11 +174,35 @@ export default function EventsPage() {
     selectedSubscriptionIds,
     journeyType
   )
-  const catalog = { ...filteredCatalog, locations: catalogLocations }
-
   const needsProducts = isProductJourneyType(journeyType)
   const needsServices = journeyType === 'booking'
   const needsSubscriptions = journeyType === 'subscription'
+  const needsLocations = journeyType === 'ecommerce_instore' || journeyType === 'booking'
+
+  const allCustomLocations = useMemo(() => catalogLocations || [], [catalogLocations])
+  const defaultLocationsTotal = DEFAULT_EVENT_LOCATIONS.length
+  const defaultLocationsSelectedCount =
+    selectedLocationIds.length === 0
+      ? defaultLocationsTotal
+      : DEFAULT_EVENT_LOCATIONS.filter((l) => selectedLocationIds.includes(l.id)).length
+
+  const catalog = {
+    ...filteredCatalog,
+    locations: (() => {
+      if (!needsLocations || !includeLocationsInEvents) return []
+      if (locationDataSource === 'default') {
+        if (selectedLocationIds.length === 0) return DEFAULT_EVENT_LOCATIONS
+        return DEFAULT_EVENT_LOCATIONS.filter((l) => selectedLocationIds.includes(l.id))
+      }
+      if (locationDataSource === 'catalog') {
+        if (selectedLocationIds.length > 0) {
+          return allCustomLocations.filter((l) => selectedLocationIds.includes(l.id))
+        }
+        return allCustomLocations
+      }
+      return []
+    })(),
+  }
 
   const productsCount = catalog.products.length
   const servicesCount = catalog.services.length
@@ -209,6 +253,12 @@ export default function EventsPage() {
   useEffect(() => {
     setRunHistory(loadRunHistory())
   }, [])
+
+  useEffect(() => {
+    if (locationDataSource === 'catalog' && allCustomLocations.length > 0 && selectedLocationIds.length === 0) {
+      setSelectedLocationIds(allCustomLocations.map((l) => l.id))
+    }
+  }, [locationDataSource, allCustomLocations, selectedLocationIds.length])
 
   const deleteJob = useCallback((jobId) => {
     setRunHistory((prev) => {
@@ -314,6 +364,26 @@ export default function EventsPage() {
     if (kind === 'subscription') setSelectedSubscriptionIds([])
   }, [])
 
+  const toggleLocationId = useCallback((id) => {
+    setSelectedLocationIds((prev) => {
+      if (locationDataSource === 'default') {
+        const allDefaultIds = DEFAULT_EVENT_LOCATIONS.map((l) => l.id)
+        const current = prev.length === 0 ? allDefaultIds : prev
+        return current.includes(id) ? current.filter((x) => x !== id) : [...current, id]
+      }
+      // Data Catalog locations
+      return prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    })
+  }, [locationDataSource])
+  const selectAllLocations = useCallback(() => {
+    if (locationDataSource === 'default') {
+      setSelectedLocationIds(DEFAULT_EVENT_LOCATIONS.map((l) => l.id))
+    } else {
+      setSelectedLocationIds(allCustomLocations.map((l) => l.id))
+    }
+  }, [locationDataSource, allCustomLocations])
+  const deselectAllLocations = useCallback(() => setSelectedLocationIds([]), [])
+
   const loadProfiles = useCallback(async () => {
     setProfilesLoadError(null)
     try {
@@ -337,7 +407,9 @@ export default function EventsPage() {
   const handleGenerate = useCallback(async () => {
     const timingOverrides = journey?.timingProfile === 'ecommerce_linear'
       ? { stepMinutesMin: timingStepMin, stepMinutesMax: Math.max(timingStepMin, timingStepMax) }
-      : undefined
+      : journey?.timingProfile === 'booking_spaced'
+        ? { bookingAtDaysFromCreateMin: Math.max(0, Math.min(90, parseInt(bookingSessionDaysMin, 10) || 0)), bookingAtDaysFromCreateMax: Math.max(0, Math.min(90, parseInt(bookingSessionDaysMax, 10) || 0)) }
+        : undefined
     const profilesOption =
       profileMode === 'selected' && selectedProfileIds.length > 0
         ? {
@@ -349,17 +421,17 @@ export default function EventsPage() {
         : undefined
     const productsPerOrder =
       needsProducts && profileMode !== 'selected'
-        ? { productsPerOrderMin, productsPerOrderMax: Math.max(productsPerOrderMin, productsPerOrderMax) }
+        ? { productsPerOrderMin: productsPerOrderMinNum, productsPerOrderMax: productsPerOrderMaxNum }
         : needsProducts
-          ? { productsPerOrderMin, productsPerOrderMax: Math.max(productsPerOrderMin, productsPerOrderMax) }
+          ? { productsPerOrderMin: productsPerOrderMinNum, productsPerOrderMax: productsPerOrderMaxNum }
           : undefined
     const result = generateEvents({
       journeyId: selectedJourneyId,
       selectedEventNames,
       catalog,
       options: {
-        journeyCount,
-        profilesCount: profileMode === 'auto' ? profilesCount : undefined,
+        journeyCount: journeyCountNum,
+        profilesCount: profileMode === 'auto' ? profilesCountNum : undefined,
         dateRange,
         timingOverrides,
         ...profilesOption,
@@ -415,7 +487,7 @@ export default function EventsPage() {
         setSendingToKlaviyo(false)
       }
     }
-  }, [selectedJourneyId, selectedEventNames, catalog, journeyCount, profilesCount, dateRange, journey?.timingProfile, timingStepMin, timingStepMax, profileMode, selectedProfileIds, availableProfiles, needsProducts, productsPerOrderMin, productsPerOrderMax])
+  }, [selectedJourneyId, selectedEventNames, catalog, journeyCount, profilesCount, dateRange, journey?.timingProfile, timingStepMin, timingStepMax, bookingSessionDaysMin, bookingSessionDaysMax, profileMode, selectedProfileIds, availableProfiles, needsProducts, productsPerOrderMin, productsPerOrderMax])
 
   const previewCatalogKind = journeyType === 'booking' ? 'service' : journeyType === 'subscription' ? 'subscription' : 'product'
   const previewExamplesByEvent = useMemo(() => {
@@ -718,12 +790,12 @@ export default function EventsPage() {
               </div>
             </div>
 
-            {/* Step 2: Catalog Items — source/template left, item table right */}
+            {/* Step 2: Event Data — items, locations */}
             <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
               <div className="bg-gradient-to-r from-indigo-50 to-white px-6 py-4 border-b border-gray-200">
                 <h2 className="text-lg font-semibold text-gray-900">
                   <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white text-sm font-bold mr-3">2</span>
-                  Catalog Items
+                  Event Data
                 </h2>
                 <p className="text-sm text-gray-500 mt-1 ml-11">
                   Choose where item data comes from, then which items to use in generated events. You can <button type="button" onClick={() => setEventsTab('configure')} className="text-indigo-600 hover:text-indigo-800 font-medium">configure event properties</button> in the other tab.
@@ -731,29 +803,37 @@ export default function EventsPage() {
               </div>
               <div className="p-6 space-y-6">
                 {journey && (needsProducts || needsServices || needsSubscriptions) && (
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Left: data source + template (1/2) */}
-                    <div className="space-y-6 min-w-0">
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-900 mb-1">Where should item data come from?</h3>
-                      <p className="text-xs text-gray-500 mb-3">Generated events will reference items from one of these sources.</p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
-                        <div
-                          className={`rounded-xl border-2 p-4 text-left transition-colors flex flex-col min-h-[152px] ${(needsProducts && dataSourceProducts === DATA_SOURCE_INDUSTRY) || (needsServices && dataSourceServices === DATA_SOURCE_INDUSTRY) || (needsSubscriptions && dataSourceSubscriptions === DATA_SOURCE_INDUSTRY) ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'}`}
+                  <div className="space-y-2">
+                    <h3 className="text-base font-semibold text-gray-900">Items</h3>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      {/* Left: data source + template (1/2) */}
+                      <div className="space-y-6 min-w-0">
+                      <div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
+                          <div
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => {
+                            if (needsProducts) setDataSourceProducts(DATA_SOURCE_INDUSTRY)
+                            if (needsServices) setDataSourceServices(DATA_SOURCE_INDUSTRY)
+                            if (needsSubscriptions) setDataSourceSubscriptions(DATA_SOURCE_INDUSTRY)
+                          }}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (needsProducts) setDataSourceProducts(DATA_SOURCE_INDUSTRY); if (needsServices) setDataSourceServices(DATA_SOURCE_INDUSTRY); if (needsSubscriptions) setDataSourceSubscriptions(DATA_SOURCE_INDUSTRY) } }}
+                          className={`rounded-xl border-2 p-4 text-left transition-colors flex flex-col min-h-[152px] cursor-pointer ${(needsProducts && dataSourceProducts === DATA_SOURCE_INDUSTRY) || (needsServices && dataSourceServices === DATA_SOURCE_INDUSTRY) || (needsSubscriptions && dataSourceSubscriptions === DATA_SOURCE_INDUSTRY) ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'}`}
                         >
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (needsProducts) setDataSourceProducts(DATA_SOURCE_INDUSTRY)
-                              if (needsServices) setDataSourceServices(DATA_SOURCE_INDUSTRY)
-                              if (needsSubscriptions) setDataSourceSubscriptions(DATA_SOURCE_INDUSTRY)
-                            }}
-                            className="w-full text-left flex-1 min-h-0"
-                          >
+                          <div className="w-full text-left flex-1 min-h-0">
                             <span className="block font-medium text-gray-900">Default template</span>
                             <span className="block text-xs text-gray-500 mt-1">Use sample items from an industry template (no catalog setup needed)</span>
-                          </button>
-                          <div className="mt-3 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                          </div>
+                          <div
+                            className="mt-3 flex-shrink-0"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (needsProducts && dataSourceProducts !== DATA_SOURCE_INDUSTRY) setDataSourceProducts(DATA_SOURCE_INDUSTRY)
+                              if (needsServices && dataSourceServices !== DATA_SOURCE_INDUSTRY) setDataSourceServices(DATA_SOURCE_INDUSTRY)
+                              if (needsSubscriptions && dataSourceSubscriptions !== DATA_SOURCE_INDUSTRY) setDataSourceSubscriptions(DATA_SOURCE_INDUSTRY)
+                            }}
+                          >
                             <select
                               id="catalog-template-select"
                               aria-label="Which template"
@@ -773,20 +853,20 @@ export default function EventsPage() {
                           </div>
                         </div>
                         <div
-                          className={`rounded-xl border-2 p-4 text-left transition-colors flex flex-col min-h-[152px] ${(needsProducts && dataSourceProducts === DATA_SOURCE_CATALOG) || (needsServices && dataSourceServices === DATA_SOURCE_CATALOG) || (needsSubscriptions && dataSourceSubscriptions === DATA_SOURCE_CATALOG) ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'}`}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => {
+                            if (needsProducts) { setDataSourceProducts(DATA_SOURCE_CATALOG); setIndustryProducts('') }
+                            if (needsServices) { setDataSourceServices(DATA_SOURCE_CATALOG); setIndustryServices('') }
+                            if (needsSubscriptions) { setDataSourceSubscriptions(DATA_SOURCE_CATALOG); setIndustrySubscriptions('') }
+                          }}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (needsProducts) { setDataSourceProducts(DATA_SOURCE_CATALOG); setIndustryProducts('') }; if (needsServices) { setDataSourceServices(DATA_SOURCE_CATALOG); setIndustryServices('') }; if (needsSubscriptions) { setDataSourceSubscriptions(DATA_SOURCE_CATALOG); setIndustrySubscriptions('') } } }}
+                          className={`rounded-xl border-2 p-4 text-left transition-colors flex flex-col min-h-[152px] cursor-pointer ${(needsProducts && dataSourceProducts === DATA_SOURCE_CATALOG) || (needsServices && dataSourceServices === DATA_SOURCE_CATALOG) || (needsSubscriptions && dataSourceSubscriptions === DATA_SOURCE_CATALOG) ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'}`}
                         >
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (needsProducts) { setDataSourceProducts(DATA_SOURCE_CATALOG); setIndustryProducts('') }
-                              if (needsServices) { setDataSourceServices(DATA_SOURCE_CATALOG); setIndustryServices('') }
-                              if (needsSubscriptions) { setDataSourceSubscriptions(DATA_SOURCE_CATALOG); setIndustrySubscriptions('') }
-                            }}
-                            className="w-full text-left flex-1 min-h-0"
-                          >
+                          <div className="w-full text-left flex-1 min-h-0">
                             <span className="block font-medium text-gray-900">Data Catalog</span>
                             <span className="block text-xs text-gray-500 mt-1">Use items you’ve added in the <Link href="/catalog" className="text-indigo-600 hover:text-indigo-800" onClick={(e) => e.stopPropagation()}>Data Catalog</Link></span>
-                          </button>
+                          </div>
                           <div className="mt-3 flex-shrink-0 flex items-center gap-3 min-h-[38px] flex-wrap">
                             {(needsProducts && dataSourceProducts === DATA_SOURCE_CATALOG) || (needsServices && dataSourceServices === DATA_SOURCE_CATALOG) || (needsSubscriptions && dataSourceSubscriptions === DATA_SOURCE_CATALOG) ? (
                               <>
@@ -808,82 +888,245 @@ export default function EventsPage() {
                             )}
                           </div>
                         </div>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    </div>
 
-                    {/* Right: item selection table (1/2) */}
-                    <div className="min-w-0">
-                      <h3 className="text-sm font-semibold text-gray-900 mb-1">Which items to include?</h3>
-                      <p className="text-xs text-gray-500 mb-2">Select the items that can appear in generated events. At least one must be selected.</p>
-                      <div className="rounded-lg border border-gray-200 bg-white overflow-hidden flex flex-col min-h-[260px]">
-                        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2 bg-gray-50/50 shrink-0">
+                      {/* Right: item selection table (1/2) */}
+                      <div className="min-w-0">
+                        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden flex flex-col min-h-[260px]">
+                          <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2 bg-gray-50/50 shrink-0">
                           <span className="text-xs text-gray-600">
                             {(() => {
                               const items = needsProducts ? fullCatalog.products : needsServices ? fullCatalog.services : fullCatalog.subscriptions
                               const selectedIds = needsProducts ? selectedProductIds : needsServices ? selectedServiceIds : selectedSubscriptionIds
                               return items.length === 0 ? 'Select a data source (and template if needed) on the left.' : `${selectedIds.length} of ${items.length} selected`
                             })()}
-                          </span>
-                          {(() => {
-                            const items = needsProducts ? fullCatalog.products : needsServices ? fullCatalog.services : fullCatalog.subscriptions
-                            if (items.length === 0) return null
-                            return (
-                              <div className="flex gap-2">
-                                <button type="button" onClick={() => { if (needsProducts) selectAllCatalog('product', items); if (needsServices) selectAllCatalog('service', items); if (needsSubscriptions) selectAllCatalog('subscription', items) }} className="text-xs font-medium text-indigo-600 hover:text-indigo-800">Select all</button>
-                                <span className="text-gray-300">|</span>
-                                <button type="button" onClick={() => { if (needsProducts) deselectAllCatalog('product'); if (needsServices) deselectAllCatalog('service'); if (needsSubscriptions) deselectAllCatalog('subscription') }} className="text-xs font-medium text-indigo-600 hover:text-indigo-800">Deselect all</button>
-                              </div>
-                            )
-                          })()}
-                        </div>
-                        <div className="flex-1 overflow-y-auto min-h-0 border-b border-gray-100" style={{ maxHeight: '260px' }}>
-                          {(() => {
-                            const items = needsProducts ? fullCatalog.products : needsServices ? fullCatalog.services : fullCatalog.subscriptions
-                            const kind = needsProducts ? 'product' : needsServices ? 'service' : 'subscription'
-                            const selectedIds = needsProducts ? selectedProductIds : needsServices ? selectedServiceIds : selectedSubscriptionIds
-                            const itemTypeLabel = (() => { try { return (getTemplate(kind)?.label ?? '').replace(/s$/, '') || (kind === 'product' ? 'Product' : kind === 'service' ? 'Service' : 'Subscription') } catch { return kind === 'product' ? 'Product' : kind === 'service' ? 'Service' : 'Subscription' } })()
-                            if (items.length === 0) {
+                            </span>
+                            {(() => {
+                              const items = needsProducts ? fullCatalog.products : needsServices ? fullCatalog.services : fullCatalog.subscriptions
+                              if (items.length === 0) return null
                               return (
-                                <p className="p-4 text-sm text-gray-500">
-                                  Add items in <Link href="/catalog" className="text-indigo-600 hover:text-indigo-800">Data Catalog</Link> or choose Default template and a template on the left.
-                                </p>
+                                <div className="flex gap-2">
+                                  <button type="button" onClick={() => { if (needsProducts) selectAllCatalog('product', items); if (needsServices) selectAllCatalog('service', items); if (needsSubscriptions) selectAllCatalog('subscription', items) }} className="text-xs font-medium text-indigo-600 hover:text-indigo-800">Select all</button>
+                                  <span className="text-gray-300">|</span>
+                                  <button type="button" onClick={() => { if (needsProducts) deselectAllCatalog('product'); if (needsServices) deselectAllCatalog('service'); if (needsSubscriptions) deselectAllCatalog('subscription') }} className="text-xs font-medium text-indigo-600 hover:text-indigo-800">Deselect all</button>
+                                </div>
                               )
-                            }
-                            return (
-                              <table className="w-full text-sm">
-                                <thead className="bg-gray-50/80 sticky top-0 z-[0]">
-                                  <tr>
-                                    <th className="text-left py-2 px-4 font-semibold text-gray-700 w-8" scope="col" />
-                                    <th className="text-left py-2 px-4 font-semibold text-gray-700" scope="col">Item name</th>
-                                    <th className="text-left py-2 px-4 font-semibold text-gray-700" scope="col">Item type</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {items.map((item) => (
-                                    <tr key={item.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50">
-                                      <td className="py-2 px-4 w-8">
-                                        <input
-                                          type="checkbox"
-                                          checked={selectedIds.includes(item.id)}
-                                          onChange={() => toggleCatalogId(kind, item.id)}
-                                          className="rounded border-gray-300 text-indigo-600"
-                                          aria-label={`Select ${item.name}`}
-                                        />
-                                      </td>
-                                      <td className="py-2 px-4 font-medium text-gray-900">{item.name}</td>
-                                      <td className="py-2 px-4 text-gray-600">{itemTypeLabel}</td>
+                            })()}
+                          </div>
+                          <div className="flex-1 overflow-y-auto min-h-0 border-b border-gray-100" style={{ maxHeight: '260px' }}>
+                            {(() => {
+                              const items = needsProducts ? fullCatalog.products : needsServices ? fullCatalog.services : fullCatalog.subscriptions
+                              const kind = needsProducts ? 'product' : needsServices ? 'service' : 'subscription'
+                              const selectedIds = needsProducts ? selectedProductIds : needsServices ? selectedServiceIds : selectedSubscriptionIds
+                              const itemTypeLabel = (() => { try { return (getTemplate(kind)?.label ?? '').replace(/s$/, '') || (kind === 'product' ? 'Product' : kind === 'service' ? 'Service' : 'Subscription') } catch { return kind === 'product' ? 'Product' : kind === 'service' ? 'Service' : 'Subscription' } })()
+                              if (items.length === 0) {
+                                return (
+                                  <p className="p-4 text-sm text-gray-500">
+                                    Add items in <Link href="/catalog" className="text-indigo-600 hover:text-indigo-800">Data Catalog</Link> or choose Default template and a template on the left.
+                                  </p>
+                                )
+                              }
+                              return (
+                                <table className="w-full text-sm">
+                                  <thead className="bg-gray-50/80 sticky top-0 z-[0]">
+                                    <tr>
+                                      <th className="text-left py-2 px-4 font-semibold text-gray-700 w-8" scope="col" />
+                                      <th className="text-left py-2 px-4 font-semibold text-gray-700" scope="col">Item name</th>
+                                      <th className="text-left py-2 px-4 font-semibold text-gray-700" scope="col">Item type</th>
                                     </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            )
-                          })()}
+                                  </thead>
+                                  <tbody>
+                                    {items.map((item) => (
+                                      <tr key={item.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50">
+                                        <td className="py-2 px-4 w-8">
+                                          <input
+                                            type="checkbox"
+                                            checked={selectedIds.includes(item.id)}
+                                            onChange={() => toggleCatalogId(kind, item.id)}
+                                            className="rounded border-gray-300 text-indigo-600"
+                                            aria-label={`Select ${item.name}`}
+                                          />
+                                        </td>
+                                        <td className="py-2 px-4 font-medium text-gray-900">{item.name}</td>
+                                        <td className="py-2 px-4 text-gray-600">{itemTypeLabel}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )
+                            })()}
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
                 )}
+
+                {journey && needsLocations && (
+                  <div className="space-y-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h3 className="text-base font-semibold text-gray-900">Locations (optional)</h3>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          Add location data to in-store and service (booking) events.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={includeLocationsInEvents}
+                      onClick={() => setIncludeLocationsInEvents((v) => !v)}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 ${includeLocationsInEvents ? 'bg-indigo-600' : 'bg-gray-200'}`}
+                    >
+                      <span
+                        className={`pointer-events-none absolute top-1/2 left-0.5 inline-block h-5 w-5 -translate-y-1/2 rounded-full bg-white shadow ring-0 transition ${includeLocationsInEvents ? 'translate-x-5' : 'translate-x-0'}`}
+                      />
+                    </button>
+
+                    {includeLocationsInEvents && (
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Left: data source cards — same layout as Catalog Items */}
+                        <div className="space-y-6 min-w-0">
+                          <div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
+                              <div
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => setLocationDataSource('default')}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setLocationDataSource('default') } }}
+                                className={`rounded-xl border-2 p-4 text-left transition-colors flex flex-col min-h-[152px] cursor-pointer ${locationDataSource === 'default' ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'}`}
+                              >
+                                <div className="w-full text-left flex-1 min-h-0">
+                                  <span className="block font-medium text-gray-900">Default</span>
+                                  <span className="block text-xs text-gray-500 mt-1">Use 5 generic locations (Location 1–5). No catalog setup needed.</span>
+                                </div>
+                              </div>
+                              <div
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => setLocationDataSource('catalog')}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setLocationDataSource('catalog') } }}
+                                className={`rounded-xl border-2 p-4 text-left transition-colors flex flex-col min-h-[152px] cursor-pointer ${locationDataSource === 'catalog' ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'}`}
+                              >
+                                <div className="w-full text-left flex-1 min-h-0">
+                                  <span className="block font-medium text-gray-900">Data Catalog</span>
+                                  <span className="block text-xs text-gray-500 mt-1">Use locations you’ve added in the <Link href="/catalog?tab=locations" className="text-indigo-600 hover:text-indigo-800" onClick={(e) => e.stopPropagation()}>Data Catalog</Link></span>
+                                </div>
+                                <div className="mt-3 flex-shrink-0 flex items-center gap-3 min-h-[38px] flex-wrap">
+                                  {locationDataSource === 'catalog' ? (
+                                    <>
+                                      {allCustomLocations.length > 0 ? <span className="text-xs text-gray-500">{allCustomLocations.length} locations available</span> : null}
+                                      <Link
+                                        href="/catalog?tab=locations"
+                                        className="inline-flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        Add locations
+                                      </Link>
+                                    </>
+                                  ) : (
+                                    <span className="text-xs text-gray-500 invisible">—</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Right: location selection table — same format as Catalog Items */}
+                        <div className="min-w-0">
+                          <div className="rounded-lg border border-gray-200 bg-white overflow-hidden flex flex-col min-h-[260px]">
+                            <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2 bg-gray-50/50 shrink-0">
+                              <span className="text-xs text-gray-600">
+                                {locationDataSource === 'default'
+                                  ? `${defaultLocationsSelectedCount} of ${defaultLocationsTotal} selected`
+                                  : allCustomLocations.length === 0
+                                    ? 'Select Data Catalog and add locations on the left.'
+                                    : `${selectedLocationIds.length} of ${allCustomLocations.length} selected`}
+                              </span>
+                              {locationDataSource === 'catalog' && allCustomLocations.length > 0 && (
+                                <div className="flex gap-2">
+                                  <button type="button" onClick={selectAllLocations} className="text-xs font-medium text-indigo-600 hover:text-indigo-800">Select all</button>
+                                  <span className="text-gray-300">|</span>
+                                  <button type="button" onClick={deselectAllLocations} className="text-xs font-medium text-indigo-600 hover:text-indigo-800">Deselect all</button>
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex-1 overflow-y-auto min-h-0 border-b border-gray-100" style={{ maxHeight: '260px' }}>
+                              {locationDataSource === 'default' ? (
+                                <table className="w-full text-sm">
+                                  <thead className="bg-gray-50/80 sticky top-0 z-[0]">
+                                    <tr>
+                                      <th className="text-left py-2 px-4 font-semibold text-gray-700 w-8" scope="col" />
+                                      <th className="text-left py-2 px-4 font-semibold text-gray-700" scope="col">Location name</th>
+                                      <th className="text-left py-2 px-4 font-semibold text-gray-700" scope="col">Address</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {DEFAULT_EVENT_LOCATIONS.map((loc) => (
+                                      <tr key={loc.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50">
+                                        <td className="py-2 px-4 w-8">
+                                          <input
+                                            type="checkbox"
+                                            checked={selectedLocationIds.length === 0 || selectedLocationIds.includes(loc.id)}
+                                            onChange={() => toggleLocationId(loc.id)}
+                                            className="rounded border-gray-300 text-indigo-600"
+                                            aria-label={`Select ${loc.name}`}
+                                          />
+                                        </td>
+                                        <td className="py-2 px-4 font-medium text-gray-900">{loc.name}</td>
+                                        <td className="py-2 px-4 text-gray-600">
+                                          {[loc.address, loc.city, loc.state, loc.postcode, loc.country].filter(Boolean).join(', ') || '—'}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              ) : allCustomLocations.length === 0 ? (
+                                <p className="p-4 text-sm text-gray-500">
+                                  Add locations in <Link href="/catalog?tab=locations" className="text-indigo-600 hover:text-indigo-800">Data Catalog</Link> or choose Default on the left.
+                                </p>
+                              ) : (
+                                <table className="w-full text-sm">
+                                  <thead className="bg-gray-50/80 sticky top-0 z-[0]">
+                                    <tr>
+                                      <th className="text-left py-2 px-4 font-semibold text-gray-700 w-8" scope="col" />
+                                      <th className="text-left py-2 px-4 font-semibold text-gray-700" scope="col">Location name</th>
+                                      <th className="text-left py-2 px-4 font-semibold text-gray-700" scope="col">Address</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {allCustomLocations.map((loc) => (
+                                      <tr key={loc.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50">
+                                        <td className="py-2 px-4 w-8">
+                                          <input
+                                            type="checkbox"
+                                            checked={selectedLocationIds.includes(loc.id)}
+                                            onChange={() => toggleLocationId(loc.id)}
+                                            className="rounded border-gray-300 text-indigo-600"
+                                            aria-label={`Select ${loc.name}`}
+                                          />
+                                        </td>
+                                        <td className="py-2 px-4 font-medium text-gray-900">{loc.name}</td>
+                                        <td className="py-2 px-4 text-gray-600">
+                                          {[loc.address, loc.city, loc.state, loc.postcode, loc.country].filter(Boolean).join(', ') || '—'}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {(needsProducts && productsCount === 0) || (needsServices && servicesCount === 0) || (needsSubscriptions && subscriptionsCount === 0) ? (
                   journey && (needsProducts || needsServices || needsSubscriptions) && <p className="text-sm text-amber-600">Select at least one item above (or pick a default template and choose a template) before continuing.</p>
                 ) : null}
@@ -913,7 +1156,11 @@ export default function EventsPage() {
                             min={1}
                             max={10}
                             value={productsPerOrderMin}
-                            onChange={(e) => setProductsPerOrderMin(Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)))}
+                            onChange={(e) => setProductsPerOrderMin(e.target.value)}
+                            onBlur={() => {
+                              const n = Math.max(1, Math.min(10, parseInt(productsPerOrderMin, 10) || 1))
+                              setProductsPerOrderMin(String(n))
+                            }}
                             className="w-14 rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-center"
                           />
                         </div>
@@ -924,11 +1171,56 @@ export default function EventsPage() {
                             min={1}
                             max={10}
                             value={productsPerOrderMax}
-                            onChange={(e) => setProductsPerOrderMax(Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)))}
+                            onChange={(e) => setProductsPerOrderMax(e.target.value)}
+                            onBlur={() => {
+                              const n = Math.max(1, Math.min(10, parseInt(productsPerOrderMax, 10) || 1))
+                              setProductsPerOrderMax(String(n))
+                            }}
                             className="w-14 rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-center"
                           />
                         </div>
                         <span className="text-xs text-gray-500">items per order</span>
+                      </div>
+                    </div>
+                  )}
+                  {journey?.timingProfile === 'booking_spaced' && (
+                    <div className="rounded-lg border border-gray-200 bg-gray-50/30 p-4">
+                      <label className="block text-sm font-semibold text-gray-900 mb-2">Booking session (days after create)</label>
+                      <p className="text-xs text-gray-500 mb-3">How many days after the booking is created the appointment or stay takes place. Events are dated within your timestamp range; each journey picks a random value between min and max for variety.</p>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-600">Min</span>
+                          <input
+                            id="bookingSessionDaysMin"
+                            type="number"
+                            min={0}
+                            max={90}
+                            value={bookingSessionDaysMin}
+                            onChange={(e) => setBookingSessionDaysMin(e.target.value)}
+                            onBlur={() => {
+                              const n = Math.max(0, Math.min(90, parseInt(bookingSessionDaysMin, 10) || 0))
+                              setBookingSessionDaysMin(String(n))
+                            }}
+                            className="w-14 rounded-lg border border-gray-300 bg-white px-2 py-2.5 text-sm font-medium text-gray-900 shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-center"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-600">Max</span>
+                          <input
+                            id="bookingSessionDaysMax"
+                            type="number"
+                            min={0}
+                            max={90}
+                            value={bookingSessionDaysMax}
+                            onChange={(e) => setBookingSessionDaysMax(e.target.value)}
+                            onBlur={() => {
+                              const n = Math.max(0, Math.min(90, parseInt(bookingSessionDaysMax, 10) || 0))
+                              setBookingSessionDaysMax(String(n))
+                            }}
+                            className="w-14 rounded-lg border border-gray-300 bg-white px-2 py-2.5 text-sm font-medium text-gray-900 shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-center"
+                          />
+                        </div>
+                        <span className="text-xs text-gray-500">days</span>
                       </div>
                     </div>
                   )}
@@ -937,8 +1229,9 @@ export default function EventsPage() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => setJourneyCount((c) => Math.max(1, c - 1))}
-                        className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:ring-2 focus:ring-indigo-500"
+                        onClick={() => setJourneyCount((c) => String(Math.max(1, Math.min(10, (parseInt(c, 10) || 1) - 1))))}
+                        {...journeyDecHold}
+                        className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:ring-2 focus:ring-indigo-500 select-none"
                         aria-label="Decrease journeys per profile"
                       >
                         −
@@ -949,13 +1242,18 @@ export default function EventsPage() {
                         min={1}
                         max={10}
                         value={journeyCount}
-                        onChange={(e) => setJourneyCount(Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)))}
+                        onChange={(e) => setJourneyCount(e.target.value)}
+                        onBlur={() => {
+                          const n = Math.max(1, Math.min(10, parseInt(journeyCount, 10) || 1))
+                          setJourneyCount(String(n))
+                        }}
                         className="w-16 rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm font-medium text-gray-900 shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-center"
                       />
                       <button
                         type="button"
-                        onClick={() => setJourneyCount((c) => Math.min(10, c + 1))}
-                        className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:ring-2 focus:ring-indigo-500"
+                        onClick={() => setJourneyCount((c) => String(Math.min(10, (parseInt(c, 10) || 1) + 1)))}
+                        {...journeyIncHold}
+                        className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:ring-2 focus:ring-indigo-500 select-none"
                         aria-label="Increase journeys per profile"
                       >
                         +
@@ -995,24 +1293,25 @@ export default function EventsPage() {
                     <h3 className="text-sm font-semibold text-gray-900">Profile source</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
                       <div
-                        className={`rounded-xl border-2 p-4 text-left transition-colors flex flex-col min-h-[120px] ${
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => { setProfileMode('auto'); setSelectedProfileIds([]) }}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setProfileMode('auto'); setSelectedProfileIds([]) } }}
+                        className={`rounded-xl border-2 p-4 text-left transition-colors flex flex-col min-h-[120px] cursor-pointer ${
                           profileMode === 'auto' ? 'border-indigo-500 bg-indigo-50/50 shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
                         }`}
                       >
-                        <button
-                          type="button"
-                          onClick={() => { setProfileMode('auto'); setSelectedProfileIds([]) }}
-                          className="w-full text-left flex-1 min-h-0 flex flex-col items-start"
-                        >
+                        <div className="w-full text-left flex-1 min-h-0 flex flex-col items-start">
                           <span className="block text-sm font-semibold text-gray-900">Generate random profiles</span>
                           <p className="text-xs text-gray-500 mt-1">Simulated profiles for this run only.</p>
-                        </button>
+                        </div>
                         {profileMode === 'auto' && (
                           <div className="mt-3 flex-shrink-0 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                             <button
                               type="button"
-                              onClick={() => setProfilesCount((c) => Math.max(1, c - 1))}
-                              className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                              onClick={() => setProfilesCount((c) => String(Math.max(1, Math.min(50, (parseInt(c, 10) || 5) - 1))))}
+                              {...profilesDecHold}
+                              className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 select-none"
                               aria-label="Decrease"
                             >
                               −
@@ -1022,13 +1321,18 @@ export default function EventsPage() {
                               min={1}
                               max={50}
                               value={profilesCount}
-                              onChange={(e) => setProfilesCount(Math.max(1, Math.min(50, parseInt(e.target.value, 10) || 1)))}
+                              onChange={(e) => setProfilesCount(e.target.value)}
+                              onBlur={() => {
+                                const n = Math.max(1, Math.min(50, parseInt(profilesCount, 10) || 5))
+                                setProfilesCount(String(n))
+                              }}
                               className="w-14 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-center focus:ring-2 focus:ring-indigo-500"
                             />
                             <button
                               type="button"
-                              onClick={() => setProfilesCount((c) => Math.min(50, c + 1))}
-                              className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                              onClick={() => setProfilesCount((c) => String(Math.min(50, (parseInt(c, 10) || 5) + 1)))}
+                              {...profilesIncHold}
+                              className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 select-none"
                               aria-label="Increase"
                             >
                               +
@@ -1040,7 +1344,7 @@ export default function EventsPage() {
                       <button
                         type="button"
                         onClick={() => setProfileMode('selected')}
-                        className={`rounded-xl border-2 p-4 text-left transition-colors min-h-[120px] flex flex-col items-start justify-start ${
+                        className={`rounded-xl border-2 p-4 text-left transition-colors min-h-[120px] flex flex-col items-start justify-start cursor-pointer ${
                           profileMode === 'selected' ? 'border-indigo-500 bg-indigo-50/50 shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
                         }`}
                       >
@@ -1126,10 +1430,10 @@ export default function EventsPage() {
                     ) : (
                       <>
                         <h3 className="text-sm font-semibold text-gray-900 mb-1">Which profiles to use?</h3>
-                        <p className="text-xs text-gray-500 mb-2">{profilesCount} random profile{profilesCount !== 1 ? 's' : ''} will be generated for this run.</p>
+                        <p className="text-xs text-gray-500 mb-2">{profilesCountNum} random profile{profilesCountNum !== 1 ? 's' : ''} will be generated for this run.</p>
                         <div className="rounded-lg border border-gray-200 bg-white overflow-hidden flex flex-col min-h-[260px]">
                           <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2 bg-gray-50/50 shrink-0">
-                            <span className="text-xs text-gray-600">{profilesCount} profile{profilesCount !== 1 ? 's' : ''} (preview)</span>
+                            <span className="text-xs text-gray-600">{profilesCountNum} profile{profilesCountNum !== 1 ? 's' : ''} (preview)</span>
                           </div>
                           <div className="flex-1 overflow-y-auto min-h-0" style={{ maxHeight: '240px' }}>
                             <table className="w-full text-sm">
@@ -1141,7 +1445,7 @@ export default function EventsPage() {
                                 </tr>
                               </thead>
                               <tbody>
-                                {Array.from({ length: profilesCount }, (_, i) => {
+                                {Array.from({ length: profilesCountNum }, (_, i) => {
                                   const { email, firstName, lastName } = getProfileEmailAndName(i, 'klaviyo-dummy.com')
                                   return (
                                     <tr key={i} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50">
@@ -1168,7 +1472,7 @@ export default function EventsPage() {
               {profileMode === 'selected' && selectedProfileIds.length === 0 && hasEnoughData && <span className="text-sm text-amber-600">Load and select profiles, or use generated.</span>}
               <button
                 type="button"
-                onClick={() => setGenerateStep('confirm')}
+                onClick={() => setShowReviewModal(true)}
                 disabled={selectedEventNames.length === 0 || !hasEnoughData || (profileMode === 'selected' && selectedProfileIds.length === 0)}
                 className="inline-flex items-center rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -1178,128 +1482,135 @@ export default function EventsPage() {
             </>
             )}
 
-            {/* Confirmation: summary + click-through payload preview + prominent Generate button */}
-            {generateStep === 'confirm' && journey && (
-              <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-                <div className="bg-gradient-to-r from-indigo-50 to-white px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-wrap gap-4">
-                  <h2 className="text-lg font-semibold text-gray-900">Review & run</h2>
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setGenerateStep('setup')}
-                      className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-                    >
-                      ← Back to setup
-                    </button>
-                    <button
-                      type="button"
-                      onClick={async () => { await handleGenerate(); setGenerateStep('setup'); setEventsTab('jobs') }}
-                      disabled={selectedEventNames.length === 0 || !hasEnoughData || sendingToKlaviyo}
-                      className="inline-flex items-center rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {sendingToKlaviyo ? 'Sending to Klaviyo…' : 'Generate events'}
-                    </button>
-                  </div>
-                </div>
-                <div className="p-6 sm:p-8 flex flex-col gap-6">
-                  {/* Summary (1/3) | Example payloads (2/3) side by side */}
-                  <div className="grid grid-cols-1 lg:grid-cols-[1fr_2fr] gap-6 min-h-[400px]">
-                    {/* Summary — 1/3 */}
-                    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                      <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Summary</h3>
-                      <p className="text-lg font-semibold text-gray-900">{journey.name}</p>
-                      <ul className="mt-3 text-sm text-gray-600 space-y-1">
-                        <li><span className="text-gray-500">Journeys per profile:</span> {journeyCount}</li>
-                        <li><span className="text-gray-500">Total runs:</span> {profileMode === 'auto' ? profilesCount * journeyCount : selectedProfileIds.length * journeyCount}</li>
-                        <li><span className="text-gray-500">Data:</span> {(needsProducts && dataSourceProducts === DATA_SOURCE_CATALOG) || (needsServices && dataSourceServices === DATA_SOURCE_CATALOG) || (needsSubscriptions && dataSourceSubscriptions === DATA_SOURCE_CATALOG) ? 'Catalog' : `Template${(needsProducts ? industryProducts : needsServices ? industryServices : industrySubscriptions) ? ` · ${getBusinessTypeById(needsProducts ? industryProducts : needsServices ? industryServices : industrySubscriptions)?.label ?? ''}` : ''}`}</li>
-                        <li><span className="text-gray-500">Profiles:</span> {profileMode === 'auto' ? `${profilesCount} random` : `${selectedProfileIds.length} selected`}</li>
-                        <li><span className="text-gray-500">Dates:</span> {DATE_RANGE_OPTIONS.find((o) => o.value === dateRange)?.label ?? dateRange}</li>
-                        {needsProducts && <li><span className="text-gray-500">Items/order:</span> {productsPerOrderMin}–{Math.max(productsPerOrderMin, productsPerOrderMax)}</li>}
-                      </ul>
-                      <p className="mt-3 text-xs text-gray-500">Events are sent to Klaviyo and use the <code className="bg-gray-100 px-1 rounded">(KD)</code> metric suffix.</p>
+            {/* Review modal: summary + payload preview + generate button */}
+            {showReviewModal && journey && (
+              <div className="fixed inset-0 z-50 overflow-y-auto">
+                <div className="fixed inset-0 bg-gray-500/75 transition-opacity" aria-hidden="true" onClick={() => setShowReviewModal(false)} />
+                <div className="flex min-h-full items-center justify-center p-4">
+                  <div className="relative w-full max-w-4xl rounded-xl border border-gray-200 bg-white shadow-xl flex flex-col max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+                    <div className="bg-gradient-to-r from-indigo-50 to-white px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-wrap gap-4 shrink-0">
+                      <h2 className="text-lg font-semibold text-gray-900">Review & run</h2>
+                      <button
+                        type="button"
+                        onClick={() => setShowReviewModal(false)}
+                        className="rounded-lg p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        aria-label="Close"
+                      >
+                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
                     </div>
-
-                    {/* Example payloads — 2/3: event list + 1–3 examples per event */}
-                    <div className="flex flex-col rounded-xl border border-gray-200 overflow-hidden bg-white shadow-sm min-h-0">
-                      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50/50 flex-wrap gap-2">
-                        <span className="text-sm font-semibold text-gray-900">Example payloads</span>
-                        <div className="flex items-center gap-2">
-                          {previewEventName && previewExamplesByEvent[previewEventName] && (
-                            <span className="text-xs text-gray-500">
-                              Example {previewExampleIndex + 1} of {previewExamplesByEvent[previewEventName].length}
-                            </span>
-                          )}
-                          {previewEventName && previewExamplesByEvent[previewEventName] && previewExamplesByEvent[previewEventName].length > 1 && (
-                            <div className="flex gap-1">
-                              <button
-                                type="button"
-                                onClick={() => setPreviewExampleIndex((i) => Math.max(0, i - 1))}
-                                disabled={previewExampleIndex <= 0}
-                                className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                              >
-                                ← Prev
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setPreviewExampleIndex((i) => Math.min((previewExamplesByEvent[previewEventName]?.length ?? 1) - 1, i + 1))}
-                                disabled={previewExampleIndex >= (previewExamplesByEvent[previewEventName]?.length ?? 1) - 1}
-                                className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                              >
-                                Next →
-                              </button>
-                            </div>
-                          )}
-                          <button type="button" onClick={() => setEventsTab('configure')} className="text-xs font-medium text-indigo-600 hover:text-indigo-800">Configure properties</button>
+                    <div className="p-6 flex flex-col gap-4 overflow-y-auto min-h-0 flex-1">
+                      {/* Summary — compact header style matching Preview */}
+                      <div className="flex flex-col rounded-xl border border-gray-200 overflow-hidden bg-white shadow-sm shrink-0">
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50/50">
+                          <span className="text-sm font-semibold text-gray-900">Summary</span>
+                        </div>
+                        <div className="px-4 py-3">
+                          <p className="text-sm font-medium text-gray-900">{journey.name}</p>
+                          <ul className="mt-1.5 text-xs text-gray-600 flex flex-wrap gap-x-4 gap-y-0.5">
+                            <li><span className="text-gray-500">Journeys per profile:</span> {journeyCountNum}</li>
+                            <li><span className="text-gray-500">Total runs:</span> {profileMode === 'auto' ? profilesCountNum * journeyCountNum : selectedProfileIds.length * journeyCountNum}</li>
+                            <li><span className="text-gray-500">Data:</span> {(needsProducts && dataSourceProducts === DATA_SOURCE_CATALOG) || (needsServices && dataSourceServices === DATA_SOURCE_CATALOG) || (needsSubscriptions && dataSourceSubscriptions === DATA_SOURCE_CATALOG) ? 'Catalog' : `Template${(needsProducts ? industryProducts : needsServices ? industryServices : industrySubscriptions) ? ` · ${getBusinessTypeById(needsProducts ? industryProducts : needsServices ? industryServices : industrySubscriptions)?.label ?? ''}` : ''}`}</li>
+                            <li><span className="text-gray-500">Profiles:</span> {profileMode === 'auto' ? `${profilesCountNum} random` : `${selectedProfileIds.length} selected`}</li>
+                            <li><span className="text-gray-500">Dates:</span> {DATE_RANGE_OPTIONS.find((o) => o.value === dateRange)?.label ?? dateRange}</li>
+                            {needsProducts && <li><span className="text-gray-500">Items/order:</span> {productsPerOrderMinNum}–{productsPerOrderMaxNum}</li>}
+                          </ul>
+                          <p className="mt-1.5 text-xs text-gray-500">Events are sent to Klaviyo with <code className="bg-gray-100 px-1 rounded">(KD)</code> metric suffix.</p>
                         </div>
                       </div>
-                      <div className="flex flex-1 min-h-0 flex-col sm:flex-row">
-                        <nav className="sm:w-52 border-b sm:border-b-0 sm:border-r border-gray-200 bg-gray-50/30 flex sm:flex-col overflow-x-auto shrink-0">
-                          {selectedEventNames.map((name, idx) => (
-                            <button
-                              key={name}
-                              type="button"
-                              onClick={() => { setPreviewEventName(name); setPreviewExampleIndex(0) }}
-                              className={`px-4 py-3 text-left text-sm font-medium whitespace-nowrap border-b sm:border-b-0 sm:border-r border-gray-200 last:border-0 transition-colors ${previewEventName === name ? 'bg-white text-indigo-700 border-indigo-500 sm:border-r-indigo-500 shadow-sm' : 'text-gray-600 hover:bg-white hover:text-gray-900'}`}
-                            >
-                              {name}
-                            </button>
-                          ))}
-                        </nav>
-                        <div className="flex-1 flex flex-col min-h-0 p-4 sm:p-6 bg-white">
-                          {previewEventName && previewExamplesByEvent[previewEventName] && (
-                            (() => {
-                              const examples = previewExamplesByEvent[previewEventName]
-                              const sampleProperties = examples[previewExampleIndex] ?? examples[0]
-                              const klaviyoPayload = samplePropertiesToKlaviyoEventPayload(sampleProperties, previewEventName)
-                              return (
-                                <>
-                                  <p className="text-xs text-gray-500 mb-2">{previewEventName} — example {previewExampleIndex + 1} of {examples.length} (Klaviyo API request body)</p>
-                                  <pre className="flex-1 text-xs text-gray-800 bg-gray-50 rounded-lg p-4 overflow-auto border border-gray-100 font-mono min-h-[260px]" style={{ maxHeight: 'min(420px, 50vh)' }}>
-                                    {JSON.stringify(klaviyoPayload, null, 2)}
-                                  </pre>
-                                </>
-                              )
-                            })()
-                          )}
+
+                      {/* Payload preview section */}
+                      <div className="flex flex-col rounded-xl border border-gray-200 overflow-hidden bg-white shadow-sm min-h-0 flex-1">
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50/50 flex-wrap gap-2">
+                          <span className="text-sm font-semibold text-gray-900">Preview</span>
+                          <div className="flex items-center gap-2">
+                            {previewEventName && previewExamplesByEvent[previewEventName] && (
+                              <span className="text-xs text-gray-500">
+                                Example {previewExampleIndex + 1} of {previewExamplesByEvent[previewEventName].length}
+                              </span>
+                            )}
+                            {previewEventName && previewExamplesByEvent[previewEventName] && previewExamplesByEvent[previewEventName].length > 1 && (
+                              <div className="flex gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewExampleIndex((i) => Math.max(0, i - 1))}
+                                  disabled={previewExampleIndex <= 0}
+                                  className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                                >
+                                  ← Prev
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewExampleIndex((i) => Math.min((previewExamplesByEvent[previewEventName]?.length ?? 1) - 1, i + 1))}
+                                  disabled={previewExampleIndex >= (previewExamplesByEvent[previewEventName]?.length ?? 1) - 1}
+                                  className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                                >
+                                  Next →
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex flex-1 min-h-0 flex-col sm:flex-row">
+                          <nav className="sm:w-52 border-b sm:border-b-0 sm:border-r border-gray-200 bg-gray-50/30 flex sm:flex-col overflow-x-auto shrink-0">
+                            {selectedEventNames.map((name) => (
+                              <button
+                                key={name}
+                                type="button"
+                                onClick={() => { setPreviewEventName(name); setPreviewExampleIndex(0) }}
+                                className={`px-4 py-3 text-left text-sm font-medium whitespace-nowrap border-b sm:border-b-0 sm:border-r border-gray-200 last:border-0 transition-colors ${previewEventName === name ? 'bg-white text-indigo-700 border-indigo-500 sm:border-r-indigo-500 shadow-sm' : 'text-gray-600 hover:bg-white hover:text-gray-900'}`}
+                              >
+                                {name}
+                              </button>
+                            ))}
+                          </nav>
+                          <div className="flex-1 flex flex-col min-h-0 p-4 sm:p-6 bg-white">
+                            {previewEventName && previewExamplesByEvent[previewEventName] && (
+                              (() => {
+                                const examples = previewExamplesByEvent[previewEventName]
+                                const sampleProperties = examples[previewExampleIndex] ?? examples[0]
+                                const klaviyoPayload = samplePropertiesToKlaviyoEventPayload(sampleProperties, previewEventName)
+                                return (
+                                  <>
+                                    <p className="text-xs text-gray-500 mb-2">{previewEventName} — example {previewExampleIndex + 1} of {examples.length} (Klaviyo API request body)</p>
+                                    <pre className="flex-1 text-xs text-gray-800 bg-gray-50 rounded-lg p-4 overflow-auto border border-gray-100 font-mono min-h-[280px]" style={{ maxHeight: 'min(520px, 55vh)' }}>
+                                      {JSON.stringify(klaviyoPayload, null, 2)}
+                                    </pre>
+                                  </>
+                                )
+                              })()
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Generate events + Cancel at bottom */}
+                      <div className="rounded-xl border-2 border-indigo-200 bg-indigo-50/50 p-6 flex flex-wrap items-center justify-between gap-4 shrink-0">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900">Ready to generate</p>
+                          <p className="text-xs text-gray-600 mt-0.5">Events will be sent to Klaviyo (metric name suffix <code className="bg-white/80 px-1 rounded">(KD)</code>) and saved to run history for review.</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setShowReviewModal(false)}
+                            className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => { await handleGenerate(); setShowReviewModal(false); setEventsTab('jobs') }}
+                            disabled={selectedEventNames.length === 0 || !hasEnoughData || sendingToKlaviyo}
+                            className="inline-flex items-center rounded-lg bg-indigo-600 px-6 py-3 text-base font-semibold text-white shadow-md hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {sendingToKlaviyo ? 'Sending to Klaviyo…' : 'Generate events'}
+                          </button>
                         </div>
                       </div>
                     </div>
-                  </div>
-
-                  {/* Prominent Generate events CTA */}
-                  <div className="rounded-xl border-2 border-indigo-200 bg-indigo-50/50 p-6 flex flex-wrap items-center justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">Ready to generate</p>
-                      <p className="text-xs text-gray-600 mt-0.5">Events will be sent to Klaviyo (metric name suffix <code className="bg-white/80 px-1 rounded">(KD)</code>) and saved to run history for review.</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={async () => { await handleGenerate(); setGenerateStep('setup'); setEventsTab('jobs') }}
-                      disabled={selectedEventNames.length === 0 || !hasEnoughData || sendingToKlaviyo}
-                      className="inline-flex items-center rounded-lg bg-indigo-600 px-6 py-3 text-base font-semibold text-white shadow-md hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {sendingToKlaviyo ? 'Sending to Klaviyo…' : 'Generate events'}
-                    </button>
                   </div>
                 </div>
               </div>

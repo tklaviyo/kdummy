@@ -142,16 +142,6 @@ export function validateItem(templateKey, item) {
 
   // Product conditionals
   if (templateKey === 'product') {
-    if (item.hasGender === true) {
-      if (item.gender === undefined || item.gender === null || item.gender === '') {
-        errors.push({ field: 'gender', message: 'Gender is required when Has gender is on' })
-      }
-    }
-    if (item.isBundle === true) {
-      if (!Array.isArray(item.bundleItems) || item.bundleItems.length < 1) {
-        errors.push({ field: 'bundleItems', message: 'Bundle items are required (at least one) when Is bundle is on' })
-      }
-    }
     if (item.hasOptions === true) {
       if (!Array.isArray(item.options) || item.options.length < 1) {
         errors.push({ field: 'options', message: 'At least one option (name + values) is required when Has options is on' })

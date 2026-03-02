@@ -1,7 +1,7 @@
 /**
  * Subscription catalog template — source of truth.
  * Mandatory field order: id, name, price, currency, description, categories, url, imageUrl
- * Additional required: interval, intervalCount
+ * Additional required: subscriptionInterval, paymentInterval
  */
 
 export const subscriptionTemplate = {
@@ -17,8 +17,8 @@ export const subscriptionTemplate = {
     { key: 'imageUrl', type: 'string', label: 'Image URL', required: false },
   ],
   additionalRequired: [
-    { key: 'interval', type: 'enum', label: 'Interval', enum: ['week', 'month', 'year'], required: true },
-    { key: 'intervalCount', type: 'number', label: 'Interval count', required: true },
+    { key: 'subscriptionInterval', type: 'enum', label: 'Subscription Interval', enum: ['weekly', 'monthly', 'yearly'], required: true },
+    { key: 'paymentInterval', type: 'enum', label: 'Payment Interval', enum: ['weekly', 'monthly', 'yearly'], required: true },
   ],
   toggles: [],
   conditionalFields: [],

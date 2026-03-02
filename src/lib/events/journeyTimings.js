@@ -28,6 +28,7 @@ export const TIMING_PROFILES = {
     daysAfterCreate: {
       'Booking Created': 0,
       'Placed Order': 0,
+      'Booking Updated': 0,
       'Booking Reminder': -2,
       'Booking Confirmed': -1,
       'Booking Checked in': 3,
@@ -35,6 +36,8 @@ export const TIMING_PROFILES = {
       'Booking Cancelled': 0,
       'Booking Not Attended': 4,
     },
+    /** Minutes between lead events (Viewed/Added/Started) before runStartMs; last lead event is this many minutes before Booking Created. */
+    bookingLeadStepMinutes: 5,
     /** Session date (booking_at) = create + this many days. Check-in and Attended use this day. */
     bookingAtDaysFromCreate: 3,
   },

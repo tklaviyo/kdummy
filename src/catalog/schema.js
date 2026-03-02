@@ -4,9 +4,8 @@
  * Field order and conditionals only. No industry-specific fields.
  */
 
-const CURRENCY_ENUM = ['USD', 'EUR', 'GBP', 'AUD', 'CAD', 'JPY']
 const GENDER_ENUM = ['women', 'men', 'unisex', 'kids']
-const INTERVAL_ENUM = ['week', 'month', 'year']
+const SUBSCRIPTION_INTERVAL_ENUM = ['weekly', 'monthly', 'yearly']
 const productTemplate = {
   key: 'product',
   label: 'Products',
@@ -14,31 +13,11 @@ const productTemplate = {
     { key: 'name', label: 'Name', type: 'string', required: true },
     { key: 'id', label: 'ID', type: 'string', required: true, placeholder: 'e.g. PROD-001' },
     { key: 'price', label: 'Price', type: 'number', required: true },
-    { key: 'currency', label: 'Currency', type: 'enum', required: true, enumValues: CURRENCY_ENUM },
     { key: 'description', label: 'Description', type: 'string', required: false },
     { key: 'categories', label: 'Categories', type: 'stringArray', required: false, help: 'Comma-separated or array' },
     { key: 'brand', label: 'Brand', type: 'string', required: false, placeholder: 'e.g. Acme' },
     { key: 'url', label: 'URL', type: 'string', required: false },
     { key: 'imageUrl', label: 'Image URL', type: 'string', required: false },
-    { key: 'isBundle', label: 'Is bundle', type: 'boolean', required: false, help: 'Product is a bundle of other items (e.g. gift set).' },
-    {
-      key: 'bundleItems',
-      label: 'Bundle items',
-      type: 'stringArray',
-      required: false,
-      help: 'Type item names and press Enter to add.',
-      when: { dependsOn: 'isBundle', equals: true },
-    },
-    { key: 'isDigital', label: 'Is digital', type: 'boolean', required: false, help: 'Product is digital (e.g. download, license).' },
-    { key: 'hasGender', label: 'Has gender', type: 'boolean', required: false, help: 'Product is gendered (e.g. women’s, men’s).' },
-    {
-      key: 'gender',
-      label: 'Gender',
-      type: 'enum',
-      required: false,
-      enumValues: GENDER_ENUM,
-      when: { dependsOn: 'hasGender', equals: true },
-    },
     { key: 'hasOptions', label: 'Has variants', type: 'boolean', required: false, help: 'Product has options like Size or Color; each combination is a variant.' },
     {
       key: 'options',
@@ -64,12 +43,41 @@ const serviceTemplate = {
     { key: 'name', label: 'Name', type: 'string', required: true },
     { key: 'id', label: 'ID', type: 'string', required: true, placeholder: 'e.g. SERV-001' },
     { key: 'price', label: 'Price', type: 'number', required: true },
-    { key: 'currency', label: 'Currency', type: 'enum', required: true, enumValues: CURRENCY_ENUM },
     { key: 'description', label: 'Description', type: 'string', required: false },
     { key: 'categories', label: 'Categories', type: 'stringArray', required: false },
     { key: 'url', label: 'URL', type: 'string', required: false },
     { key: 'imageUrl', label: 'Image URL', type: 'string', required: false },
-    { key: 'durationMinutes', label: 'Duration (minutes)', type: 'number', required: true },
+    {
+      key: 'bookingDateType',
+      label: 'Booking date type',
+      type: 'enum',
+      required: false,
+      enumValues: ['single date', 'date range'],
+      help: 'Choose whether this booking uses a single date/time or a from–to date range.',
+    },
+    {
+      key: 'dateRangeMinDays',
+      label: 'Date range min (days)',
+      type: 'number',
+      required: false,
+      when: { dependsOn: 'bookingDateType', equals: 'date range' },
+      help: 'Minimum length of the booking range in days (e.g. 1 for one night).',
+    },
+    {
+      key: 'dateRangeMaxDays',
+      label: 'Date range max (days)',
+      type: 'number',
+      required: false,
+      when: { dependsOn: 'bookingDateType', equals: 'date range' },
+      help: 'Maximum length of the booking range in days (e.g. 5 for up to five nights).',
+    },
+    {
+      key: 'bookingType',
+      label: 'Booking Type',
+      type: 'stringArray',
+      required: false,
+      help: 'Optional booking types (e.g. initial, follow-up); one is picked at random for each event.',
+    },
   ],
 }
 
@@ -80,13 +88,26 @@ const subscriptionTemplate = {
     { key: 'name', label: 'Name', type: 'string', required: true },
     { key: 'id', label: 'ID', type: 'string', required: true, placeholder: 'e.g. SUB-001' },
     { key: 'price', label: 'Price', type: 'number', required: true },
-    { key: 'currency', label: 'Currency', type: 'enum', required: true, enumValues: CURRENCY_ENUM },
     { key: 'description', label: 'Description', type: 'string', required: false },
     { key: 'categories', label: 'Categories', type: 'stringArray', required: false },
     { key: 'url', label: 'URL', type: 'string', required: false },
     { key: 'imageUrl', label: 'Image URL', type: 'string', required: false },
-    { key: 'interval', label: 'Interval', type: 'enum', required: true, enumValues: INTERVAL_ENUM },
-    { key: 'intervalCount', label: 'Interval count', type: 'number', required: true },
+    {
+      key: 'subscriptionInterval',
+      label: 'Subscription Interval',
+      type: 'enum',
+      required: true,
+      enumValues: SUBSCRIPTION_INTERVAL_ENUM,
+      help: 'How often the subscription term renews (Subscription Started, Renewed, Expiry Reminder, Expired).',
+    },
+    {
+      key: 'paymentInterval',
+      label: 'Payment Interval',
+      type: 'enum',
+      required: true,
+      enumValues: SUBSCRIPTION_INTERVAL_ENUM,
+      help: 'How often the customer is charged (Placed Order cadence).',
+    },
   ],
 }
 

@@ -87,6 +87,12 @@ export const EVENT_PROPERTY_SCHEMAS = {
       { key: 'location_id', description: 'Store/location ID (in-store only)', source: 'system' },
       { key: 'location_name', description: 'Store/location name (in-store only)', source: 'system' },
       { key: 'location_address', description: 'Store/location address (in-store only)', source: 'system' },
+      { key: 'subscription_id', description: 'Subscription plan ID (when OrderType is New/Recurring subscription)', source: 'catalog' },
+      { key: 'subscription_name', description: 'Subscription plan name (subscription orders)', source: 'catalog' },
+      { key: 'subscription_started_at', description: 'When the subscription started (subscription orders)', source: 'system' },
+      { key: 'next_payment_date', description: 'Next payment date YYYY-MM-DD (subscription orders)', source: 'system' },
+      { key: 'subscription_interval', description: 'Subscription interval (subscription orders)', source: 'catalog' },
+      { key: 'payment_interval', description: 'Payment interval (subscription orders)', source: 'catalog' },
     ],
     catalogItemType: null,
   },
@@ -163,11 +169,13 @@ export const EVENT_PROPERTY_SCHEMAS = {
       { key: 'subscription_name', description: 'Plan name', example: 'Pro Plan', source: 'catalog' },
       { key: 'price', description: 'Price', example: 49, source: 'catalog' },
       { key: 'currency', description: 'Currency', example: 'USD', source: 'catalog' },
-      { key: 'interval', description: 'Billing interval', example: 'month', source: 'catalog' },
+      { key: 'subscription_interval', description: 'Subscription interval (weekly, monthly, yearly)', example: 'monthly', source: 'catalog' },
+      { key: 'payment_interval', description: 'Payment interval (weekly, monthly, yearly)', example: 'monthly', source: 'catalog' },
+      { key: 'subscription_started_at', description: 'When the subscription started (ISO 8601)', example: '2025-01-28T12:00:00.000Z', source: 'system' },
+      { key: 'next_payment_date', description: 'Next payment/renewal date (YYYY-MM-DD)', example: '2025-02-28', source: 'system' },
     ],
     catalogDriven: [
       { key: 'categories', description: 'Subscription categories', source: 'catalog', catalogField: 'categories' },
-      { key: 'interval_count', description: 'Interval count', source: 'catalog', catalogField: 'intervalCount' },
     ],
     catalogItemType: 'subscription',
   },
@@ -183,6 +191,7 @@ export const EVENT_PROPERTY_SCHEMAS = {
     mandatory: [
       ...MANDATORY,
       { key: 'subscription_id', description: 'Subscription identifier', example: 'sub_123', source: 'catalog' },
+      { key: 'subscription_started_at', description: 'When the subscription started (ISO 8601)', example: '2025-01-28T12:00:00.000Z', source: 'system' },
     ],
     catalogDriven: [],
     catalogItemType: 'subscription',
@@ -191,7 +200,8 @@ export const EVENT_PROPERTY_SCHEMAS = {
     mandatory: [
       ...MANDATORY,
       { key: 'subscription_id', description: 'Subscription identifier', example: 'sub_123', source: 'catalog' },
-      { key: 'expires_at', description: 'Expiry date', example: '2025-02-28', source: 'system' },
+      { key: 'expires_at', description: 'Expiry date (YYYY-MM-DD, yearly plans)', example: '2025-02-28', source: 'system' },
+      { key: 'subscription_started_at', description: 'When the subscription started (ISO 8601)', example: '2025-01-28T12:00:00.000Z', source: 'system' },
     ],
     catalogDriven: [],
     catalogItemType: 'subscription',
@@ -200,6 +210,8 @@ export const EVENT_PROPERTY_SCHEMAS = {
     mandatory: [
       ...MANDATORY,
       { key: 'subscription_id', description: 'Subscription identifier', example: 'sub_123', source: 'catalog' },
+      { key: 'expires_at', description: 'Expiry date (YYYY-MM-DD, yearly plans)', example: '2025-02-28', source: 'system' },
+      { key: 'subscription_started_at', description: 'When the subscription started (ISO 8601)', example: '2025-01-28T12:00:00.000Z', source: 'system' },
     ],
     catalogDriven: [],
     catalogItemType: 'subscription',
@@ -211,8 +223,12 @@ export const EVENT_PROPERTY_SCHEMAS = {
       { key: 'subscription_name', description: 'Plan name', example: 'Pro Plan', source: 'catalog' },
       { key: 'price', description: 'Price', example: 49, source: 'catalog' },
       { key: 'currency', description: 'Currency', example: 'USD', source: 'catalog' },
+      { key: 'subscription_started_at', description: 'When the subscription started (ISO 8601)', example: '2025-01-28T12:00:00.000Z', source: 'system' },
+      { key: 'next_payment_date', description: 'Next payment/renewal date (YYYY-MM-DD)', example: '2025-02-28', source: 'system' },
     ],
-    catalogDriven: [],
+    catalogDriven: [
+      { key: 'expires_at', description: 'Period end date (yearly plans, optional)', example: '2025-02-28', source: 'system' },
+    ],
     catalogItemType: 'subscription',
   },
   'Booking Created': {
@@ -245,6 +261,7 @@ export const EVENT_PROPERTY_SCHEMAS = {
       { key: 'booking_id', description: 'Booking identifier', example: 'book_001', source: 'system' },
       { key: 'service_name', description: 'Service name', example: 'Dinner Reservation', source: 'catalog' },
       { key: 'booking_at', description: 'Scheduled time', example: '2025-01-30T19:00:00.000Z', source: 'system' },
+      { key: 'booking_created_at', description: 'When the booking was created', example: '2025-01-27T10:00:00.000Z', source: 'system' },
     ],
     catalogDriven: [],
     catalogItemType: 'service',
@@ -506,7 +523,9 @@ function getLocationForPreview(catalog, context) {
 export function buildSampleEventProperties(eventName, catalog, context = {}) {
   const businessTypeId = context.businessTypeId || null
   const schema = getMergedEventPropertySchema(eventName, businessTypeId)
-  const now = new Date().toISOString()
+  const nowMs = Date.now()
+  const now = new Date(nowMs).toISOString()
+  const DAY_MS = 24 * 60 * 60 * 1000
   const profileId = context.profileId ?? '01J001'
   const profileEmail = context.profileEmail ?? 'profile-001@klaviyo-dummy.com'
 
@@ -575,9 +594,22 @@ export function buildSampleEventProperties(eventName, catalog, context = {}) {
       properties.subscription_name = item.name
       properties.price = item.price
       properties.currency = item.currency ?? 'USD'
-      properties.interval = item.interval ?? 'month'
-      if (item.intervalCount != null) properties.interval_count = item.intervalCount
+      const subInt = item.subscriptionInterval ?? item.subscriptionType ?? item.interval ?? 'monthly'
+      const payInt = item.paymentInterval ?? item.subscriptionInterval ?? item.subscriptionType ?? item.interval ?? 'monthly'
+      properties.subscription_interval = typeof subInt === 'string' ? subInt.toLowerCase() : 'monthly'
+      properties.payment_interval = typeof payInt === 'string' ? payInt.toLowerCase() : 'monthly'
       if (item.categories?.length) properties.categories = item.categories
+      const startedMs = nowMs - 30 * DAY_MS
+      properties.subscription_started_at = new Date(startedMs).toISOString()
+      if (eventName === 'Subscription Started') {
+        properties.next_payment_date = new Date(startedMs + 30 * DAY_MS).toISOString().slice(0, 10)
+      }
+      if (eventName === 'Subscription Renewed') {
+        properties.next_payment_date = new Date(startedMs + 60 * DAY_MS).toISOString().slice(0, 10)
+      }
+      if (['Subscription Expiry Reminder', 'Subscription Expired'].includes(eventName)) {
+        properties.expires_at = new Date(startedMs + 365 * DAY_MS).toISOString().slice(0, 10)
+      }
     }
     flattenOptionsToProperties(item, properties)
   }
@@ -655,6 +687,20 @@ export function buildSampleEventProperties(eventName, catalog, context = {}) {
       properties.location_name = loc.location_name
       properties.location_address = loc.location_address
     }
+    if ((context.orderType === 'New subscription' || context.orderType === 'Recurring subscription' || context.catalogKind === 'subscription') && (item || catalog?.subscriptions?.length)) {
+      const sub = item && itemKind === 'subscription' ? item : catalog.subscriptions[0]
+      if (sub) {
+        properties.subscription_id = sub.id
+        properties.subscription_name = sub.name
+        const startedMs = nowMs - 30 * DAY_MS
+        properties.subscription_started_at = new Date(startedMs).toISOString()
+        properties.next_payment_date = new Date(startedMs + 30 * DAY_MS).toISOString().slice(0, 10)
+        const subInt = sub.subscriptionInterval ?? sub.subscriptionType ?? sub.interval ?? 'monthly'
+        const payInt = sub.paymentInterval ?? sub.subscriptionInterval ?? sub.subscriptionType ?? sub.interval ?? 'monthly'
+        properties.subscription_interval = typeof subInt === 'string' ? subInt.toLowerCase() : 'monthly'
+        properties.payment_interval = typeof payInt === 'string' ? payInt.toLowerCase() : 'monthly'
+      }
+    }
   }
   if (eventName === 'Ordered Product' && item) {
     properties.order_id = context.orderId ?? 'ord_001'
@@ -702,17 +748,72 @@ export function buildSampleEventProperties(eventName, catalog, context = {}) {
       properties.location_address = loc.location_address
     }
   }
-  if (eventName === 'Booking Created' && item) {
+  if (['Booking Created', 'Booking Reminder', 'Booking Confirmed', 'Booking Checked in', 'Booking Attended', 'Booking Not Attended', 'Booking Cancelled', 'Booking Updated'].includes(eventName)) {
+    if (item) {
+      properties.service_id = item.id
+      properties.service_name = item.name
+      properties.price = item.price ?? 0
+      properties.currency = item.currency ?? 'USD'
+    }
     properties.booking_id = 'book_001'
-    properties.service_id = item.id
-    properties.service_name = item.name
-    properties.price = item.price ?? 0
-    properties.currency = item.currency ?? 'USD'
-  }
-  if (['Booking Reminder', 'Booking Confirmed', 'Booking Checked in', 'Booking Attended', 'Booking Not Attended', 'Booking Cancelled', 'Booking Updated'].includes(eventName)) {
-    properties.booking_id = 'book_001'
-    if (item) properties.service_name = item.name
-    if (eventName === 'Booking Reminder') properties.booking_at = now
+    // Booking date vs date range, driven by service.bookingDateType
+    const bookingTypeRaw =
+      item && typeof item.bookingDateType === 'string'
+        ? item.bookingDateType.toLowerCase()
+        : 'single date'
+    const isDateRange =
+      bookingTypeRaw === 'date range' || bookingTypeRaw === 'date_range'
+
+    // For preview: model booking_created_at and booking_at/booking_from/to with the same
+    // semantics as generateEvents/journeyTimings:
+    // - booking_created_at: when the booking was created
+    // - booking_at or booking_from/to: when the session happens
+    // Here we treat the session as "now" and the create date as a fixed number of days before.
+    const bookingAtDaysFromCreate = 3
+    const createdMs = nowMs - bookingAtDaysFromCreate * DAY_MS
+    const sessionMs = createdMs + bookingAtDaysFromCreate * DAY_MS
+
+    if (isDateRange) {
+      const minDays = item && (Number(item.dateRangeMinDays) > 0 || Number(item.dateRangeMaxDays) > 0)
+        ? Math.max(0, Number(item.dateRangeMinDays) || 0)
+        : 1
+      const maxDays = item && (Number(item.dateRangeMinDays) > 0 || Number(item.dateRangeMaxDays) > 0)
+        ? Math.max(minDays, Number(item.dateRangeMaxDays) || 0)
+        : 3
+      const lengthDays = minDays === maxDays ? minDays : Math.round((minDays + maxDays) / 2)
+      const from = new Date(sessionMs).toISOString()
+      const to = new Date(sessionMs + lengthDays * DAY_MS).toISOString()
+      properties.booking_from = from
+      properties.booking_to = to
+    } else {
+      properties.booking_at = new Date(sessionMs).toISOString()
+    }
+
+    // booking_created_at = when the booking was created (session - bookingAtDaysFromCreate)
+    const bookingCreatedAt = new Date(createdMs).toISOString()
+    properties.booking_created_at = bookingCreatedAt
+
+    // Event time semantics for preview, mirroring booking_spaced:
+    // - Booking Created / Updated / Cancelled: at booking_created_at
+    // - Reminder: 2 days before session
+    // - Confirmed: 1 day before session
+    // - Checked in / Attended: at session
+    // - Not Attended: after session
+    let bookingEventTimeMs = createdMs
+    if (eventName === 'Booking Reminder') {
+      bookingEventTimeMs = sessionMs - 2 * DAY_MS
+    } else if (eventName === 'Booking Confirmed') {
+      bookingEventTimeMs = sessionMs - 1 * DAY_MS
+    } else if (eventName === 'Booking Checked in' || eventName === 'Booking Attended') {
+      bookingEventTimeMs = sessionMs
+    } else if (eventName === 'Booking Not Attended') {
+      bookingEventTimeMs = sessionMs + 1 * DAY_MS
+    }
+    properties.time = new Date(bookingEventTimeMs).toISOString()
+
+    if (item && Array.isArray(item.bookingType) && item.bookingType.length > 0) {
+      properties.booking_type = item.bookingType[0]
+    }
     if (['Booking Checked in', 'Booking Attended', 'Booking Created'].includes(eventName)) {
       const loc = getLocationForPreview(catalog, context)
       properties.location_id = loc.location_id
@@ -722,7 +823,6 @@ export function buildSampleEventProperties(eventName, catalog, context = {}) {
   }
   if (eventName === 'Subscription Expiry Reminder') {
     properties.subscription_id = item?.id ?? 'sub_123'
-    properties.expires_at = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
   }
 
   return { properties, schema }

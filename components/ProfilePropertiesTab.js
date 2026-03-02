@@ -4,7 +4,6 @@ import { useState, useEffect, forwardRef, useImperativeHandle } from 'react'
 import { getActiveApiKey } from '@/lib/storage'
 import { useConfirm } from '@/context/ConfirmContext'
 import { groupProperties, PROFILE_PROPERTY_GROUPS, getPropertyGroupId } from '@/lib/profilePropertyGroups'
-import { getCatalogItemsForSource, hasCustomCatalogData } from '@/lib/defaultCatalogTemplates'
 
 const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onPropertiesChange, headerRenderedByParent = false }, ref) {
   const { alert, confirm } = useConfirm()
@@ -12,14 +11,6 @@ const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onProper
   const [loading, setLoading] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingProperty, setEditingProperty] = useState(null)
-  const [catalogData, setCatalogData] = useState({
-    products: [],
-    services: [],
-    subscriptions: [],
-    locations: [],
-    reservations: [],
-    loyalty: [],
-  })
   const [activeGroupId, setActiveGroupId] = useState('all')
   
   // Form state
@@ -30,14 +21,11 @@ const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onProper
     description: '',
     default_value: '',
     options: '',
-    data_source: 'static',
-    catalog_source_choice: 'catalog',
-    catalog_template: '',
-    object_property_mapping: '',
     required: false,
     group: 'other',
     date_min: '',
     date_max: '',
+    date_range_preset: 'last_12_months',
     integer_min: '',
     integer_max: '',
     array_min_items: '',
@@ -46,7 +34,6 @@ const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onProper
 
   useEffect(() => {
     fetchProperties()
-    fetchCatalogData()
   }, [])
 
   useEffect(() => {
@@ -98,22 +85,6 @@ const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onProper
     }
   }
 
-  const fetchCatalogData = async () => {
-    try {
-      const data = await fetchWithApiKey('/api/data-catalog')
-      setCatalogData({
-        products: data.data.products || [],
-        services: data.data.services || [],
-        subscriptions: data.data.subscriptions || [],
-        locations: data.data.locations || [],
-        reservations: data.data.reservations || [],
-        loyalty: data.data.loyalty || [],
-      })
-    } catch (error) {
-      console.error('Error fetching catalog data:', error)
-    }
-  }
-
   const handleAdd = () => {
     setEditingProperty(null)
     setFormData({
@@ -123,14 +94,11 @@ const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onProper
       description: '',
       default_value: '',
       options: '',
-      data_source: 'static',
-      catalog_source_choice: 'catalog',
-      catalog_template: '',
-      object_property_mapping: '',
       required: false,
       group: 'other',
       date_min: '',
       date_max: '',
+      date_range_preset: 'last_12_months',
       integer_min: '',
       integer_max: '',
       array_min_items: '',
@@ -141,8 +109,6 @@ const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onProper
 
   const handleEdit = (property) => {
     setEditingProperty(property)
-    const catalogSource = property.catalog_source || 'static'
-    const hasTemplate = !!(property.catalog_template && ['products', 'services', 'subscriptions'].includes(catalogSource))
     setFormData({
       name: property.name,
       original_name: property.original_name || property.name,
@@ -150,14 +116,11 @@ const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onProper
       description: property.description || '',
       default_value: property.default_value || '',
       options: property.options ? property.options.join(', ') : '',
-      data_source: catalogSource,
-      catalog_source_choice: hasTemplate ? 'template' : 'catalog',
-      catalog_template: property.catalog_template || '',
-      object_property_mapping: property.object_property_mapping === 'id' || property.object_property_mapping === 'name' ? property.object_property_mapping : '',
       required: property.required || false,
       group: getPropertyGroupId(property),
       date_min: property.date_min || '',
       date_max: property.date_max || '',
+      date_range_preset: property.date_range_preset || (property.date_min || property.date_max ? 'custom' : 'last_12_months'),
       integer_min: property.integer_min ?? '',
       integer_max: property.integer_max ?? '',
       array_min_items: property.array_min_items != null ? String(property.array_min_items) : '',
@@ -195,21 +158,20 @@ const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onProper
       return
     }
 
-    const mapping = formData.object_property_mapping?.trim()
-    const object_property_mapping = mapping === 'id' || mapping === 'name' ? mapping : null
     const propertyData = {
       name: formData.name.trim(),
       type: formData.type,
       description: formData.description.trim(),
       default_value: formData.default_value || null,
-      options: formData.data_source === 'static' && formData.options ? formData.options.split(',').map(o => o.trim()).filter(o => o) : null,
-      catalog_source: formData.data_source !== 'static' ? formData.data_source : null,
-      catalog_template: formData.data_source !== 'static' && formData.catalog_source_choice === 'template' && formData.catalog_template ? formData.catalog_template : null,
-      object_property_mapping,
+      options: formData.options ? formData.options.split(',').map(o => o.trim()).filter(o => o) : null,
+      catalog_source: null,
+      catalog_template: null,
+      object_property_mapping: null,
       required: formData.required,
       group: formData.group || 'other',
-      date_min: formData.date_min || null,
-      date_max: formData.date_max || null,
+      date_min: formData.date_range_preset === 'custom' ? (formData.date_min || null) : null,
+      date_max: formData.date_range_preset === 'custom' ? (formData.date_max || null) : null,
+      date_range_preset: formData.type === 'date' ? (formData.date_range_preset || null) : null,
       integer_min: formData.integer_min !== '' ? formData.integer_min : null,
       integer_max: formData.integer_max !== '' ? formData.integer_max : null,
       array_min_items: formData.array_min_items !== '' ? parseInt(formData.array_min_items, 10) : null,
@@ -280,24 +242,8 @@ const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onProper
   }
 
   const isDefaultProperty = (property) => {
-    const defaultNames = [
-      'gender', 'birthday', 'marketing_preferences',
-      'signup_store', 'favorite_store', 'recent_store', 'signup_date',
-      'loyalty_member', 'loyalty_signup_date', 'loyalty_points', 'loyalty_spend',
-      'current_loyalty_tier', 'next_loyalty_tier'
-    ]
+    const defaultNames = ['gender', 'birthday', 'marketing_preferences', 'loyalty_member', 'loyalty_tier', 'signup_date']
     return defaultNames.includes(property.original_name || property.name)
-  }
-
-  const getObjectProperties = (catalogSource) => {
-    if (!catalogSource || catalogSource === 'static') return []
-    const items = getCatalogItemsForSource(catalogSource, catalogData, true)
-    if (!items.length) return []
-    const allKeys = new Set()
-    items.forEach(item => {
-      Object.keys(item).forEach(key => allKeys.add(key))
-    })
-    return Array.from(allKeys)
   }
 
   useImperativeHandle(ref, () => ({
@@ -411,26 +357,7 @@ const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onProper
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Data Source *</label>
-                  <select
-                    value={formData.data_source}
-                    onChange={(e) => setFormData({ ...formData, data_source: e.target.value, object_property_mapping: '', catalog_template: '', catalog_source_choice: 'catalog', options: e.target.value !== 'static' ? '' : formData.options })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                  >
-                    <option value="static">Static</option>
-                    <option value="locations">Locations / Stores</option>
-                    <option value="reservations">Reservations (advanced)</option>
-                    <option value="loyalty">Loyalty</option>
-                  </select>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {formData.data_source === 'static'
-                      ? 'Static values - configure options below'
-                      : 'Dynamic values from catalog. For multiple profiles you select items on the Generate step; for a single profile you pick or type a value.'}
-                  </p>
-                </div>
-
-                {formData.data_source !== 'static' && (
+                {false && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Map to catalog field</label>
                     <select
@@ -446,8 +373,8 @@ const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onProper
                   </div>
                 )}
 
-                {/* Options for static string/array types - array can also be dynamic */}
-                {formData.data_source === 'static' && formData.type === 'string' && (
+                {/* Options for string type */}
+                {formData.type === 'string' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Options</label>
                     <div className="flex space-x-2 mb-2">
@@ -515,11 +442,10 @@ const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onProper
                   </div>
                 )}
 
-                {/* Options for array type - can be static or dynamic */}
+                {/* Options for array type */}
                 {formData.type === 'array' && (
                   <div>
-                    {formData.data_source === 'static' ? (
-                      <div>
+                    <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Fixed Options</label>
                         <div className="flex space-x-2 mb-2">
                           <input
@@ -584,9 +510,6 @@ const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onProper
                         </div>
                         <p className="mt-1 text-xs text-gray-500">Add fixed options for array values</p>
                       </div>
-                    ) : (
-                      <p className="text-sm text-gray-600 italic">Array will be populated dynamically from the selected Data Catalog source</p>
-                    )}
                     <div className="mt-4">
                       <label className="block text-sm font-medium text-gray-700 mb-1">Array size (min / max items)</label>
                       <div className="grid grid-cols-2 gap-4">
@@ -618,31 +541,46 @@ const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onProper
                   </div>
                 )}
 
-                {/* Date range configuration */}
+                {/* Date range configuration: preset or custom */}
                 {formData.type === 'date' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Date Range (Optional)</label>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-1">Minimum Date</label>
-                        <input
-                          type="date"
-                          value={formData.date_min}
-                          onChange={(e) => setFormData({ ...formData, date_min: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                        />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Date range</label>
+                    <select
+                      value={formData.date_range_preset}
+                      onChange={(e) => setFormData({ ...formData, date_range_preset: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                    >
+                      <option value="last_3_months">Last 3 months</option>
+                      <option value="last_6_months">Last 6 months</option>
+                      <option value="last_12_months">Last 12 months</option>
+                      <option value="last_24_months">Last 24 months</option>
+                      <option value="custom">Custom date range</option>
+                    </select>
+                    {formData.date_range_preset === 'custom' && (
+                      <div className="mt-3 grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">Minimum date</label>
+                          <input
+                            type="date"
+                            value={formData.date_min}
+                            onChange={(e) => setFormData({ ...formData, date_min: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">Maximum date</label>
+                          <input
+                            type="date"
+                            value={formData.date_max}
+                            onChange={(e) => setFormData({ ...formData, date_max: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-1">Maximum Date</label>
-                        <input
-                          type="date"
-                          value={formData.date_max}
-                          onChange={(e) => setFormData({ ...formData, date_max: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                        />
-                      </div>
-                    </div>
-                    <p className="mt-1 text-xs text-gray-500">Leave empty to generate random dates without constraints</p>
+                    )}
+                    <p className="mt-1 text-xs text-gray-500">
+                      {formData.date_range_preset === 'custom' ? 'Set min/max dates for generated values.' : 'Generated dates will fall within the selected range.'}
+                    </p>
                   </div>
                 )}
 
@@ -741,8 +679,7 @@ const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onProper
                     <div className="flex flex-wrap gap-1.5 mt-1.5">
                       {isDefault && <span className="px-1.5 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-800 rounded">Default</span>}
                       {nameChanged && <span className="px-1.5 py-0.5 text-xs font-medium bg-orange-100 text-orange-800 rounded">Renamed from: {property.original_name}</span>}
-                      {property.catalog_source ? <span className="px-1.5 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded">{property.catalog_source}</span> : <span className="px-1.5 py-0.5 text-xs font-medium text-gray-500 bg-gray-100 rounded">Static</span>}
-                      {property.object_property_mapping && <span className="px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 rounded">{property.object_property_mapping}</span>}
+                      <span className="px-1.5 py-0.5 text-xs font-medium text-gray-500 bg-gray-100 rounded">Static</span>
                     </div>
                   </div>
                   <button

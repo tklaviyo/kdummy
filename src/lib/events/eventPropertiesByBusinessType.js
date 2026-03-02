@@ -11,7 +11,7 @@
  * Examples:
  * - Apparel/Footwear: gender, size, color (variant details) on product events
  * - Flight tickets: flight_number, departure_airport, arrival_airport on booking/order events
- * - SaaS/Subscription plans: plan_tier, seat_count, interval on subscription events
+ * - SaaS/Subscription plans: plan_tier, seat_count, subscription_interval, payment_interval on subscription events
  */
 
 /** @typedef {{ key: string, description: string, example?: any, source?: string, catalogField?: string }} PropertyDef */
@@ -123,14 +123,15 @@ export const EVENT_PROPERTIES_BY_BUSINESS_TYPE = {
     'Subscription Started': {
       catalogDriven: [
         { key: 'plan_tier', description: 'Plan tier (from categories)', source: 'catalog', catalogField: 'categories' },
-        { key: 'interval', description: 'Billing interval', source: 'catalog', catalogField: 'interval' },
-        { key: 'interval_count', description: 'Interval count', source: 'catalog', catalogField: 'intervalCount' },
+        { key: 'subscription_interval', description: 'Subscription interval', source: 'catalog', catalogField: 'subscriptionInterval' },
+        { key: 'payment_interval', description: 'Payment interval', source: 'catalog', catalogField: 'paymentInterval' },
       ],
     },
     'Subscription Renewed': {
       catalogDriven: [
         { key: 'plan_tier', description: 'Plan tier', source: 'catalog', catalogField: 'categories' },
-        { key: 'interval', description: 'Billing interval', source: 'catalog', catalogField: 'interval' },
+        { key: 'subscription_interval', description: 'Subscription interval', source: 'catalog', catalogField: 'subscriptionInterval' },
+        { key: 'payment_interval', description: 'Payment interval', source: 'catalog', catalogField: 'paymentInterval' },
       ],
     },
     'Subscription Updated': {
@@ -143,7 +144,8 @@ export const EVENT_PROPERTIES_BY_BUSINESS_TYPE = {
     'Subscription Started': {
       catalogDriven: [
         { key: 'membership_type', description: 'Membership type', source: 'catalog', catalogField: 'categories' },
-        { key: 'interval', description: 'Billing interval', source: 'catalog', catalogField: 'interval' },
+        { key: 'subscription_interval', description: 'Subscription interval', source: 'catalog', catalogField: 'subscriptionInterval' },
+        { key: 'payment_interval', description: 'Payment interval', source: 'catalog', catalogField: 'paymentInterval' },
       ],
     },
     'Subscription Renewed': {

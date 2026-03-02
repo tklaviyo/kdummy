@@ -2,11 +2,8 @@
 
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import Navigation from '@/components/Navigation'
-import { apiClient } from '@/lib/apiClient'
-import { buildKlaviyoEventPayload } from '@/lib/klaviyoPayloads'
-import { useConfirm } from '@/context/ConfirmContext'
 
 const RUN_HISTORY_KEY = 'kdummy_event_runs'
 
@@ -45,16 +42,17 @@ function flattenExamples(examplesByEventName) {
 
 export default function EventJobDetailPage() {
   const params = useParams()
-  const { alert } = useConfirm()
   const jobId = params?.id
-  const [detailTab, setDetailTab] = useState('events') // 'profiles' | 'events'
+  const [run, setRun] = useState(null)
+  const [mounted, setMounted] = useState(false)
+  const [detailTab, setDetailTab] = useState('events') // 'events' | 'profiles'
   const [eventDetailModal, setEventDetailModal] = useState(null) // event object or null
-  const [sendingEvents, setSendingEvents] = useState(false)
-  const [sendEventsResult, setSendEventsResult] = useState(null) // { sent, failed }
+  const [filterProfile, setFilterProfile] = useState('') // '' = all, or profileId/profileEmail
+  const [filterEventName, setFilterEventName] = useState('') // '' = all, or event name
 
-  const run = useMemo(() => {
-    if (!jobId) return null
-    return loadRunById(jobId)
+  useEffect(() => {
+    setMounted(true)
+    setRun(jobId ? loadRunById(jobId) : null)
   }, [jobId])
 
   const flatEvents = useMemo(() => {
@@ -69,34 +67,51 @@ export default function EventJobDetailPage() {
   const totalEventsFromSummary = run?.jobSummary?.totalEvents ?? 0
   const showingSampleOnly = !hasFullEvents && totalEventsFromSummary > flatEvents.length
 
-  const handleSendEventsToApi = async () => {
-    if (flatEvents.length === 0) {
-      await alert('No events to send.')
-      return
-    }
-    setSendingEvents(true)
-    setSendEventsResult(null)
-    let sent = 0
-    let failed = 0
-    try {
-      for (const ev of flatEvents) {
-        try {
-          const payload = buildKlaviyoEventPayload(ev)
-          const res = await apiClient.createEvent(payload.data)
-          if (res.ok) sent++
-          else failed++
-        } catch {
-          failed++
-        }
+  const uniqueProfiles = useMemo(() => {
+    const seen = new Set()
+    const out = []
+    for (const ev of flatEvents) {
+      const id = ev.profileId ?? ev.profileEmail ?? ''
+      if (id && !seen.has(id)) {
+        seen.add(id)
+        out.push({ id, label: ev.profileEmail || ev.profileId || id })
       }
-      setSendEventsResult({ sent, failed })
-      if (failed === 0) await alert(`Sent ${sent} event(s) to the API.`)
-      else await alert(`Sent ${sent} event(s). ${failed} failed.`)
-    } catch (e) {
-      await alert(e?.message || 'Failed to send events.')
-    } finally {
-      setSendingEvents(false)
     }
+    return out.sort((a, b) => (a.label || '').localeCompare(b.label || ''))
+  }, [flatEvents])
+
+  const uniqueEventNames = useMemo(() => {
+    const seen = new Set()
+    for (const ev of flatEvents) {
+      if (ev.eventName) seen.add(ev.eventName)
+    }
+    return [...seen].sort()
+  }, [flatEvents])
+
+  const filteredEvents = useMemo(() => {
+    let list = flatEvents
+    if (filterProfile) {
+      list = list.filter((ev) => (ev.profileId ?? ev.profileEmail) === filterProfile)
+    }
+    if (filterEventName) {
+      list = list.filter((ev) => ev.eventName === filterEventName)
+    }
+    return list
+  }, [flatEvents, filterProfile, filterEventName])
+
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navigation activePage="events" />
+        <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+          <div className="px-4 py-6 sm:px-0">
+            <div className="bg-white shadow rounded-lg p-8 text-center">
+              <p className="text-sm text-gray-500">Loading…</p>
+            </div>
+          </div>
+        </main>
+      </div>
+    )
   }
 
   if (!jobId || !run) {
@@ -185,18 +200,9 @@ export default function EventJobDetailPage() {
               )}
             </div>
 
-            {/* Tabs: Profiles | Events */}
+            {/* Tabs: Events | Profiles */}
             <div className="border-b border-gray-200">
               <nav className="flex gap-0" aria-label="Job detail tabs">
-                <button
-                  type="button"
-                  onClick={() => setDetailTab('profiles')}
-                  className={`py-3 px-6 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                    detailTab === 'profiles' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Profiles
-                </button>
                 <button
                   type="button"
                   onClick={() => setDetailTab('events')}
@@ -206,10 +212,104 @@ export default function EventJobDetailPage() {
                 >
                   Events
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setDetailTab('profiles')}
+                  className={`py-3 px-6 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                    detailTab === 'profiles' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Profiles
+                </button>
               </nav>
             </div>
 
             <div className="px-6 py-5">
+              {detailTab === 'events' && (
+                <div>
+                  <div className="flex flex-wrap items-center gap-4 mb-4">
+                    <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">
+                      Events {hasFullEvents ? `(${filteredEvents.length}${filterProfile || filterEventName ? ` of ${flatEvents.length}` : ''})` : '(sample)'}
+                    </h2>
+                    {flatEvents.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-3">
+                        <label className="flex items-center gap-2 text-sm text-gray-700">
+                          <span>Profile</span>
+                          <select
+                            value={filterProfile}
+                            onChange={(e) => setFilterProfile(e.target.value)}
+                            className="rounded-md border border-gray-300 bg-white py-1.5 pl-2 pr-8 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                          >
+                            <option value="">All profiles</option>
+                            {uniqueProfiles.map((p) => (
+                              <option key={p.id} value={p.id}>{p.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-gray-700">
+                          <span>Event / metric</span>
+                          <select
+                            value={filterEventName}
+                            onChange={(e) => setFilterEventName(e.target.value)}
+                            className="rounded-md border border-gray-300 bg-white py-1.5 pl-2 pr-8 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                          >
+                            <option value="">All events</option>
+                            {uniqueEventNames.map((name) => (
+                              <option key={name} value={name}>{name}</option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                  {showingSampleOnly && (
+                    <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-4">
+                      This run was saved before the full event list was stored. Showing a sample only ({flatEvents.length} of {totalEventsFromSummary} events). New runs will show all events.
+                    </p>
+                  )}
+                  {filteredEvents.length === 0 ? (
+                    <p className="text-sm text-gray-500">
+                      {flatEvents.length === 0 ? 'No events stored for this run.' : 'No events match the selected filters.'}
+                    </p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Event name</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {filteredEvents.map((ev) => (
+                            <tr key={ev.id ?? `${ev.eventName}-${ev.profileEmail ?? ev.profileId}-${ev.time ?? ev.timestamp}`} className="hover:bg-gray-50">
+                              <td className="px-6 py-3 whitespace-nowrap text-sm font-mono text-gray-900">
+                                {ev.profileEmail ?? ev.profileId ?? '—'}
+                              </td>
+                              <td className="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{ev.eventName}</td>
+                              <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-500">
+                                {(ev.time || ev.timestamp) ? new Date(ev.time || ev.timestamp).toLocaleString() : '—'}
+                              </td>
+                              <td className="px-6 py-3 whitespace-nowrap text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => setEventDetailModal(ev)}
+                                  className="text-sm font-medium text-indigo-600 hover:text-indigo-800"
+                                >
+                                  View details
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {detailTab === 'profiles' && (
                 <div>
                   <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-2">Profiles this job was sent to</h2>
@@ -232,74 +332,6 @@ export default function EventJobDetailPage() {
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">{p.email ?? '—'}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{p.firstName ?? '—'}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{p.lastName ?? '—'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {detailTab === 'events' && (
-                <div>
-                  <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-                    <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">
-                      Events {hasFullEvents ? `(${flatEvents.length})` : '(sample)'}
-                    </h2>
-                    {flatEvents.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={handleSendEventsToApi}
-                        disabled={sendingEvents}
-                        className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
-                      >
-                        {sendingEvents ? 'Sending…' : 'Send events to API'}
-                      </button>
-                    )}
-                  </div>
-                  {sendEventsResult && (
-                    <p className="text-sm text-gray-600 mb-2">
-                      Last run: {sendEventsResult.sent} sent{sendEventsResult.failed > 0 ? `, ${sendEventsResult.failed} failed` : ''}.
-                    </p>
-                  )}
-                  {showingSampleOnly && (
-                    <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-4">
-                      This run was saved before the full event list was stored. Showing a sample only ({flatEvents.length} of {totalEventsFromSummary} events). New runs will show all events.
-                    </p>
-                  )}
-                  {flatEvents.length === 0 ? (
-                    <p className="text-sm text-gray-500">No events stored for this run.</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Event name</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                          {flatEvents.map((ev) => (
-                            <tr key={ev.id ?? `${ev.eventName}-${ev.profileEmail ?? ev.profileId}-${ev.time ?? ev.timestamp}`} className="hover:bg-gray-50">
-                              <td className="px-6 py-3 whitespace-nowrap text-sm font-mono text-gray-900">
-                                {ev.profileEmail ?? ev.profileId ?? '—'}
-                              </td>
-                              <td className="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{ev.eventName}</td>
-                              <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-500">
-                                {(ev.time || ev.timestamp) ? new Date(ev.time || ev.timestamp).toLocaleString() : '—'}
-                              </td>
-                              <td className="px-6 py-3 whitespace-nowrap text-right">
-                                <button
-                                  type="button"
-                                  onClick={() => setEventDetailModal(ev)}
-                                  className="text-sm font-medium text-indigo-600 hover:text-indigo-800"
-                                >
-                                  View details
-                                </button>
-                              </td>
                             </tr>
                           ))}
                         </tbody>

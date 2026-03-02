@@ -1,15 +1,15 @@
 /**
  * Journey definitions: Product (online), Product (in-store), Service (booking), Subscription.
  * Type dropdown: Product (online), Product (in-store), Service (booking), Subscription.
- * Variant for Product: Ordered (full), Abandon, Cancelled, Refunded.
- * Product in-store: no abandon variant. Service and Subscription: include Viewed Product, Added to Cart, Started Checkout and have an abandon variant.
+ * Variants: Ordered (full), Cancelled/Refunded for products; Attended, Cancelled/Not attended for bookings; Subscribed/Renewed, Cancelled/Expired for subscriptions.
+ * No abandon variants — users deselect events to get lead-only flows.
  * timingProfile: see journeyTimings.js for spacing between events.
  */
 
 const LEAD_EVENTS_CART_CHECKOUT = ['Viewed Product', 'Added to Cart', 'Started Checkout']
 
 export const JOURNEYS = [
-  // ——— Product (online): Ordered first, then Abandon, Cancelled, Refunded ———
+  // ——— Product (online): Ordered, Cancelled/Refunded ———
   {
     id: 'ecommerce_online-full',
     name: 'Product (online) — Ordered',
@@ -27,36 +27,11 @@ export const JOURNEYS = [
     timingProfile: 'ecommerce_linear',
   },
   {
-    id: 'ecommerce_online-abandon',
-    name: 'Product (online) — Abandon',
+    id: 'ecommerce_online-cancelled-refunded',
+    name: 'Product (online) — Cancelled/Refunded',
     type: 'ecommerce_online',
-    variant: 'abandon',
-    description: 'Abandoned cart: browse → cart → checkout, then stop',
-    eventNames: ['Viewed Product', 'Added to Cart', 'Started Checkout'],
-    timingProfile: 'ecommerce_linear',
-  },
-  {
-    id: 'ecommerce_online-cancelled',
-    name: 'Product (online) — Cancelled',
-    type: 'ecommerce_online',
-    variant: 'cancelled',
-    description: 'Order then cancelled',
-    eventNames: [
-      'Viewed Product',
-      'Added to Cart',
-      'Started Checkout',
-      'Placed Order',
-      'Ordered Product',
-      'Cancelled Order',
-    ],
-    timingProfile: 'ecommerce_linear',
-  },
-  {
-    id: 'ecommerce_online-refunded',
-    name: 'Product (online) — Refunded',
-    type: 'ecommerce_online',
-    variant: 'refunded',
-    description: 'Order then refunded',
+    variant: 'cancelled-refunded',
+    description: 'Order then cancelled or refunded. Select which events to include (Fulfilled, Cancelled, Refunded).',
     eventNames: [
       'Viewed Product',
       'Added to Cart',
@@ -64,11 +39,12 @@ export const JOURNEYS = [
       'Placed Order',
       'Ordered Product',
       'Fulfilled Order',
+      'Cancelled Order',
       'Refunded Order',
     ],
     timingProfile: 'ecommerce_linear',
   },
-  // ——— Product (in-store): Ordered first, then Cancelled, Refunded ———
+  // ——— Product (in-store): Ordered, Cancelled/Refunded ———
   {
     id: 'ecommerce_instore-full',
     name: 'Product (in-store) — Ordered',
@@ -83,85 +59,56 @@ export const JOURNEYS = [
     timingProfile: 'ecommerce_linear',
   },
   {
-    id: 'ecommerce_instore-cancelled',
-    name: 'Product (in-store) — Cancelled',
+    id: 'ecommerce_instore-cancelled-refunded',
+    name: 'Product (in-store) — Cancelled/Refunded',
     type: 'ecommerce_instore',
-    variant: 'cancelled',
-    description: 'In-store order then cancelled',
-    eventNames: [
-      'Placed Order',
-      'Ordered Product',
-      'Cancelled Order',
-    ],
-    timingProfile: 'ecommerce_linear',
-  },
-  {
-    id: 'ecommerce_instore-refunded',
-    name: 'Product (in-store) — Refunded',
-    type: 'ecommerce_instore',
-    variant: 'refunded',
-    description: 'In-store order then refunded',
+    variant: 'cancelled-refunded',
+    description: 'In-store order then cancelled or refunded. Select which events to include (Fulfilled, Cancelled, Refunded).',
     eventNames: [
       'Placed Order',
       'Ordered Product',
       'Fulfilled Order',
+      'Cancelled Order',
       'Refunded Order',
     ],
     timingProfile: 'ecommerce_linear',
   },
-  // ——— Subscription: Subscribed first, then Abandon, Cancelled, Expired ———
+  // ——— Subscription: Subscribed/Renewed, Cancelled/Expired ———
   {
     id: 'subscription-full',
-    name: 'Subscription — Subscribed',
+    name: 'Subscription — Subscribed/Renewed',
     type: 'subscription',
     variant: 'full',
-    description: 'Browse → cart → checkout → subscribe → renewals → expiry reminder → renewed',
+    description: 'Subscribe → (yearly: reminders 30d & 7d before renewal) → renewed. Placed Order at each payment. Yearly only: renewal & reminders.',
     eventNames: [
       ...LEAD_EVENTS_CART_CHECKOUT,
       'Subscription Started',
       'Placed Order',
-      'Subscription Renewed',
-      'Placed Order',
+      'Subscription Expiry Reminder',
       'Subscription Expiry Reminder',
       'Subscription Renewed',
       'Placed Order',
     ],
-    timingProfile: 'subscription_interval',
-  },
-  {
-    id: 'subscription-abandon',
-    name: 'Subscription — Abandon',
-    type: 'subscription',
-    variant: 'abandon',
-    description: 'Browse → cart → checkout, then stop before subscribing',
-    eventNames: [...LEAD_EVENTS_CART_CHECKOUT],
     timingProfile: 'subscription_interval',
   },
   {
     id: 'subscription-cancelled',
-    name: 'Subscription — Cancelled',
+    name: 'Subscription — Cancelled/Expired',
     type: 'subscription',
     variant: 'cancelled',
-    description: 'Browse → subscribe then cancel',
-    eventNames: [...LEAD_EVENTS_CART_CHECKOUT, 'Subscription Started', 'Placed Order', 'Subscription Cancelled'],
-    timingProfile: 'subscription_interval',
-  },
-  {
-    id: 'subscription-expired',
-    name: 'Subscription — Expired',
-    type: 'subscription',
-    variant: 'expired',
-    description: 'Browse → subscribe → expiry reminder → expired',
+    description: 'Subscribe → (yearly: reminders 30d & 7d before expiry) → cancel → expire at period end. Yearly only: reminders & expired.',
     eventNames: [
       ...LEAD_EVENTS_CART_CHECKOUT,
       'Subscription Started',
       'Placed Order',
       'Subscription Expiry Reminder',
+      'Subscription Expiry Reminder',
+      'Subscription Cancelled',
       'Subscription Expired',
     ],
     timingProfile: 'subscription_interval',
   },
-  // ——— Booking (service): Attended first, then Abandon, Cancelled, Not attended ———
+  // ——— Booking (service): Attended, Cancelled/Not attended ———
   {
     id: 'booking-full',
     name: 'Booking — Attended',
@@ -180,35 +127,18 @@ export const JOURNEYS = [
     timingProfile: 'booking_spaced',
   },
   {
-    id: 'booking-abandon',
-    name: 'Booking — Abandon',
+    id: 'booking-cancelled-not-attended',
+    name: 'Booking — Cancelled/Not attended',
     type: 'booking',
-    variant: 'abandon',
-    description: 'Browse → cart → checkout, then stop before booking',
-    eventNames: [...LEAD_EVENTS_CART_CHECKOUT],
-    timingProfile: 'booking_spaced',
-  },
-  {
-    id: 'booking-cancelled',
-    name: 'Booking — Cancelled',
-    type: 'booking',
-    variant: 'cancelled',
-    description: 'Browse → create booking then cancel',
-    eventNames: [...LEAD_EVENTS_CART_CHECKOUT, 'Booking Created', 'Placed Order', 'Booking Cancelled'],
-    timingProfile: 'booking_spaced',
-  },
-  {
-    id: 'booking-not-attended',
-    name: 'Booking — Not attended',
-    type: 'booking',
-    variant: 'not-attended',
-    description: 'Browse → booking created and reminder, but did not attend',
+    variant: 'cancelled-not-attended',
+    description: 'Booking created then cancelled or not attended. Select which events to include (Reminder, Confirmed, Cancelled, Not attended).',
     eventNames: [
       ...LEAD_EVENTS_CART_CHECKOUT,
       'Booking Created',
       'Placed Order',
       'Booking Reminder',
       'Booking Confirmed',
+      'Booking Cancelled',
       'Booking Not Attended',
     ],
     timingProfile: 'booking_spaced',

@@ -166,8 +166,8 @@ export function CreateCatalogModal({ open, onClose, onSuccess }) {
 
   const summaryPriceOrPlan = (item) => {
     if (templateKey === 'subscription') {
-      return [item.intervalCount, item.interval].filter(Boolean).length
-        ? `${item.intervalCount ?? ''} ${item.interval ?? ''} • ${item.currency ?? ''} ${item.price != null ? Number(item.price) : '—'}`.trim()
+      return (item.subscriptionInterval || item.paymentInterval)
+        ? `${item.subscriptionInterval ?? '—'} / ${item.paymentInterval ?? '—'} • ${item.currency ?? ''} ${item.price != null ? Number(item.price) : '—'}`.trim()
         : (item.currency ? `${item.currency} ` : '') + (item.price != null ? Number(item.price) : '—')
     }
     return (item.currency ? `${item.currency} ` : '') + (item.price != null ? Number(item.price) : '—')

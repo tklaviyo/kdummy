@@ -17,8 +17,8 @@ const EXAMPLE_SERVICES = [
 ]
 
 const EXAMPLE_SUBSCRIPTIONS = [
-  { name: 'Example Monthly Plan', price: 19.99, currency: 'USD', interval: 'month', intervalCount: 1 },
-  { name: 'Example Annual Plan', price: 199, currency: 'USD', interval: 'year', intervalCount: 1 },
+  { name: 'Example Monthly Plan', price: 19.99, currency: 'USD', subscriptionInterval: 'monthly', paymentInterval: 'monthly' },
+  { name: 'Example Annual Plan', price: 199, currency: 'USD', subscriptionInterval: 'yearly', paymentInterval: 'yearly' },
 ]
 
 /**

@@ -110,13 +110,13 @@ export const catalogPresets = [
     id: 'subscription-monthly',
     name: 'Monthly Subscription',
     template: 'subscription',
-    preset: { currency: 'USD', interval: 'month', intervalCount: 1 },
+    preset: { currency: 'USD', subscriptionInterval: 'monthly', paymentInterval: 'monthly' },
   },
   {
     id: 'subscription-yearly',
     name: 'Yearly Subscription',
     template: 'subscription',
-    preset: { currency: 'USD', interval: 'year', intervalCount: 1 },
+    preset: { currency: 'USD', subscriptionInterval: 'yearly', paymentInterval: 'yearly' },
   },
 ]
 

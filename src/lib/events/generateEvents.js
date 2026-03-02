@@ -19,6 +19,8 @@ import {
   bookingStepMs,
   TIMING_PROFILES,
 } from './journeyTimings'
+
+const BOOKING_LEAD_EVENT_NAMES = ['Viewed Product', 'Added to Cart', 'Started Checkout']
 import { getLocationsList, toEventLocation } from './defaultLocations'
 
 function makeId(prefix, i) {
@@ -123,9 +125,30 @@ function lineItemsToKlaviyoItems(lineItems, journeyType) {
 }
 
 /**
+ * Build a single subscription line item from a catalog subscription object.
+ * Used so one chosen subscription per run is reused for all orders and events.
+ */
+function buildOneSubscriptionLineItem(sub) {
+  if (!sub) {
+    sub = { id: 'sub-1', name: 'Subscription', price: 9.99, currency: 'USD', subscriptionInterval: 'monthly', paymentInterval: 'monthly' }
+  }
+  const subInterval = typeof sub.subscriptionInterval === 'string' ? sub.subscriptionInterval.toLowerCase() : (sub.subscriptionType ?? sub.interval ?? 'monthly')
+  const payInterval = typeof sub.paymentInterval === 'string' ? sub.paymentInterval.toLowerCase() : (sub.subscriptionInterval ?? sub.subscriptionType ?? sub.interval ?? 'monthly')
+  return {
+    subscriptionId: sub.id,
+    name: sub.name,
+    price: sub.price,
+    quantity: 1,
+    currency: sub.currency || 'USD',
+    subscriptionInterval: subInterval,
+    paymentInterval: payInterval,
+  }
+}
+
+/**
  * Build line items for an order based on journey type and catalog.
  * Ecommerce: full product data (url, imageUrl, categories, brand, options) for Klaviyo items array.
- * @param {object} [opts] - optional { productsPerOrderMin, productsPerOrderMax } for ecommerce
+ * @param {object} [opts] - optional { productsPerOrderMin, productsPerOrderMax } for ecommerce; { chosenSubscription } for subscription (when set, use this plan instead of pickRandom)
  */
 function buildLineItems(journeyType, catalog, orderIndex, opts = {}) {
   const items = []
@@ -169,14 +192,10 @@ function buildLineItems(journeyType, catalog, orderIndex, opts = {}) {
   }
   if (journeyType === 'subscription') {
     const subs = catalog.subscriptions || []
-    const sub = subs.length ? pickRandom(subs, { id: 'sub-1', name: 'Subscription', price: 9.99, currency: 'USD' }) : { id: 'sub-1', name: 'Subscription', price: 9.99, currency: 'USD' }
-    items.push({
-      subscriptionId: sub.id,
-      name: sub.name,
-      price: sub.price,
-      quantity: 1,
-      currency: sub.currency || 'USD',
-    })
+    const sub = opts.chosenSubscription != null
+      ? opts.chosenSubscription
+      : (subs.length ? pickRandom(subs, { id: 'sub-1', name: 'Subscription', price: 9.99, currency: 'USD', subscriptionInterval: 'monthly', paymentInterval: 'monthly' }) : { id: 'sub-1', name: 'Subscription', price: 9.99, currency: 'USD', subscriptionInterval: 'monthly', paymentInterval: 'monthly' })
+    items.push(buildOneSubscriptionLineItem(sub))
   }
   if (journeyType === 'booking') {
     const services = catalog.services || []
@@ -187,6 +206,7 @@ function buildLineItems(journeyType, catalog, orderIndex, opts = {}) {
       price: svc.price,
       quantity: 1,
       currency: svc.currency || 'USD',
+      _bookingService: svc,
     })
   }
   return items
@@ -249,24 +269,27 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
   const baseTimingProfile = getTimingProfile(timingProfileId) || TIMING_PROFILES.ecommerce_linear
   const timingOverrides = options.timingOverrides || {}
   const timingProfile = { ...baseTimingProfile, ...timingOverrides }
-  const subscriptionInterval = catalog?.subscriptions?.[0]
-    ? { interval: catalog.subscriptions[0].interval ?? 'month', intervalCount: catalog.subscriptions[0].intervalCount ?? 1 }
-    : {}
-  const subscriptionIntervalDays = (() => {
-    if (!subscriptionInterval.interval) return 30
-    const mult = subscriptionInterval.intervalCount ?? 1
-    if (subscriptionInterval.interval === 'year') return 365 * mult
-    if (subscriptionInterval.interval === 'week') return 7 * mult
-    if (subscriptionInterval.interval === 'day') return 1 * mult
-    return 30 * mult
-  })()
+  const intervalToDays = (raw) => {
+    const interval = typeof raw === 'string' ? raw.toLowerCase() : ''
+    if (interval === 'yearly' || interval === 'year') return 365
+    if (interval === 'weekly' || interval === 'week') return 7
+    return 30
+  }
   const catalogTypeForLineItems = isProductJourneyType(journey.type) ? 'ecommerce' : journey.type
   const orderSource = journey.type === 'ecommerce_instore' ? 'instore' : (journey.type === 'ecommerce_online' ? 'online' : 'online')
   const isSubscription = journey.type === 'subscription'
+  const defaultSubCatalog = catalog?.subscriptions?.[0]
+  const defaultSubscriptionIntervalDays = defaultSubCatalog
+    ? intervalToDays(defaultSubCatalog.subscriptionInterval ?? defaultSubCatalog.subscriptionType ?? defaultSubCatalog.interval) || 30
+    : 30
+  const defaultPaymentIntervalDays = defaultSubCatalog
+    ? intervalToDays(defaultSubCatalog.paymentInterval ?? defaultSubCatalog.subscriptionInterval ?? defaultSubCatalog.subscriptionType ?? defaultSubCatalog.interval) || 30
+    : 30
 
   const countPlacedOrdersInSequence = emitSequence.filter((x) => x.isOrder).length
   const hasLeadEvents = emitSequence.some((x) => x.eventName === 'Viewed Product' || x.eventName === 'Added to Cart' || x.eventName === 'Started Checkout')
   const countOrderLineItemSets = Math.max(countPlacedOrdersInSequence, hasLeadEvents ? 1 : 0)
+  const numLeadEventsInSequence = emitSequence.filter((x) => BOOKING_LEAD_EVENT_NAMES.includes(x.eventName)).length
 
   const MIN_MS = 60 * 1000
   const stepCount = emitSequence.filter((x) => !x.isLineItem).length
@@ -287,14 +310,42 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
     const profileId = profileIds[profileIndex]
     const profileEmail = profileEmails[profileIndex]
     const runStartMs = startMs + (run / Math.max(1, totalRuns)) * usableRangeMs
-    const runLocation = toEventLocation(pickRandom(locationsList, null))
+    const runLocation =
+      locationsList.length > 0 ? toEventLocation(pickRandom(locationsList, null)) : null
+
+    const runTimingProfile = (() => {
+      const min = timingProfile.bookingAtDaysFromCreateMin ?? timingProfile.bookingAtDaysFromCreate ?? 3
+      const max = timingProfile.bookingAtDaysFromCreateMax ?? timingProfile.bookingAtDaysFromCreate ?? 3
+      const lo = Math.max(0, Math.min(90, Number(min) || 0))
+      const hi = Math.max(lo, Math.min(90, Number(max) || 0))
+      const runBookingAtDays = lo === hi ? lo : lo + Math.floor(Math.random() * (hi - lo + 1))
+      return { ...timingProfile, bookingAtDaysFromCreate: runBookingAtDays }
+    })()
+
+    const runChosenSubscription = (catalogTypeForLineItems === 'subscription' && catalog?.subscriptions?.length)
+      ? pickRandom(catalog.subscriptions, catalog.subscriptions[0])
+      : null
+    const runSubscriptionIntervalDays = runChosenSubscription
+      ? intervalToDays(runChosenSubscription.subscriptionInterval ?? runChosenSubscription.subscriptionType ?? runChosenSubscription.interval) || 30
+      : defaultSubscriptionIntervalDays
+    const runPaymentIntervalDays = runChosenSubscription
+      ? intervalToDays(runChosenSubscription.paymentInterval ?? runChosenSubscription.subscriptionInterval ?? runChosenSubscription.subscriptionType ?? runChosenSubscription.interval) || 30
+      : defaultPaymentIntervalDays
 
     const runLineItemsByOrderIndex = []
-    for (let o = 0; o < countOrderLineItemSets; o++) {
-      runLineItemsByOrderIndex.push(
-        buildLineItems(catalogTypeForLineItems, catalog, o, catalogTypeForLineItems === 'ecommerce' ? productsPerOrderOpts : {})
-      )
+    if (catalogTypeForLineItems === 'subscription' && runChosenSubscription) {
+      const oneSubscriptionLine = [buildOneSubscriptionLineItem(runChosenSubscription)]
+      for (let o = 0; o < countOrderLineItemSets; o++) {
+        runLineItemsByOrderIndex.push(oneSubscriptionLine)
+      }
+    } else {
+      for (let o = 0; o < countOrderLineItemSets; o++) {
+        runLineItemsByOrderIndex.push(
+          buildLineItems(catalogTypeForLineItems, catalog, o, catalogTypeForLineItems === 'ecommerce' ? productsPerOrderOpts : {})
+        )
+      }
     }
+    const runSubscriptionLineItem = (catalogTypeForLineItems === 'subscription' && runLineItemsByOrderIndex[0]?.[0]) ? runLineItemsByOrderIndex[0][0] : null
 
     let orderIndex = 0
     let lineItems = []
@@ -307,7 +358,9 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
     let placedOrderCountInRun = 0
     let subscriptionStartMs = runStartMs + 15 * MIN_MS
     let subscriptionRenewalIndex = 0
+    let subscriptionExpiryReminderIndex = 0
     let subscriptionLeadStep = 0
+    let bookingLeadIndex = 0
 
     for (let i = 0; i < emitSequence.length; i++) {
       const item = emitSequence[i]
@@ -315,10 +368,16 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
       if (timingProfileId === 'ecommerce_linear' && timingProfile.stepMinutesMin != null) {
         eventMs = linearStepMs(runStartMs, sequenceIndex, timingProfile.stepMinutesMin, timingProfile.stepMinutesMax ?? timingProfile.stepMinutesMin)
       } else if (timingProfileId === 'booking_spaced' && timingProfile.daysAfterCreate) {
-        eventMs = bookingStepMs(runStartMs, item.eventName, i, timingProfile)
+        if (BOOKING_LEAD_EVENT_NAMES.includes(item.eventName)) {
+          const stepMin = timingProfile.bookingLeadStepMinutes ?? 5
+          eventMs = runStartMs - (numLeadEventsInSequence - bookingLeadIndex) * stepMin * MIN_MS
+          bookingLeadIndex++
+        } else {
+          eventMs = bookingStepMs(runStartMs, item.eventName, i, runTimingProfile)
+        }
       } else if (timingProfileId === 'subscription_interval') {
         if (item.eventName === 'Placed Order') {
-          eventMs = previousEventMs
+          eventMs = subscriptionStartMs + placedOrderCountInRun * runPaymentIntervalDays * DAY_MS
         } else if (item.eventName === 'Viewed Product' || item.eventName === 'Added to Cart' || item.eventName === 'Started Checkout') {
           eventMs = runStartMs + subscriptionLeadStep * 5 * MIN_MS
           subscriptionLeadStep++
@@ -326,13 +385,15 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
           eventMs = subscriptionStartMs
         } else if (item.eventName === 'Subscription Renewed') {
           subscriptionRenewalIndex++
-          eventMs = subscriptionStartMs + subscriptionRenewalIndex * subscriptionIntervalDays * DAY_MS
+          eventMs = subscriptionStartMs + subscriptionRenewalIndex * runPaymentIntervalDays * DAY_MS
         } else if (item.eventName === 'Subscription Expiry Reminder') {
-          const fraction = timingProfile.expiryReminderFraction ?? 0.2
-          const nextRenewalAt = (subscriptionRenewalIndex + 1) * subscriptionIntervalDays * DAY_MS
-          eventMs = subscriptionStartMs + nextRenewalAt - fraction * subscriptionIntervalDays * DAY_MS
+          const expiryMs = subscriptionStartMs + 1 * runSubscriptionIntervalDays * DAY_MS
+          const reminderOffsetsDays = [30, 7]
+          const reminderIndex = Math.min(subscriptionExpiryReminderIndex, reminderOffsetsDays.length - 1)
+          subscriptionExpiryReminderIndex++
+          eventMs = expiryMs - reminderOffsetsDays[reminderIndex] * DAY_MS
         } else if (item.eventName === 'Subscription Expired') {
-          eventMs = subscriptionStartMs + 1 * subscriptionIntervalDays * DAY_MS
+          eventMs = subscriptionStartMs + 1 * runSubscriptionIntervalDays * DAY_MS
         } else if (item.eventName === 'Subscription Cancelled') {
           eventMs = previousEventMs
         } else {
@@ -342,6 +403,13 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
         const runEndMs = runStartMs + (rangeMs / Math.max(1, totalRuns)) * 0.9
         const stepMs = (runEndMs - runStartMs) / Math.max(1, emitSequence.length)
         eventMs = runStartMs + i * stepMs
+      }
+      // Only emit Subscription Expiry Reminder and Subscription Renewed for yearly plans; Subscription Expired sends for all intervals (cancel then expire at period end).
+      if (timingProfileId === 'subscription_interval' && (item.eventName === 'Subscription Expiry Reminder' || item.eventName === 'Subscription Renewed')) {
+        const runSubCatalog = runChosenSubscription || defaultSubCatalog
+        const raw = runSubCatalog?.subscriptionInterval ?? runSubCatalog?.subscriptionType ?? runSubCatalog?.interval ?? ''
+        const isYearly = /^yearly?$/i.test(String(raw).trim())
+        if (!isYearly) continue
       }
       previousEventMs = eventMs
       const timestamp = new Date(eventMs).toISOString()
@@ -380,6 +448,7 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
           : 'One time'
         const source = isProductJourneyType(journey.type) ? orderSource : 'online'
         const orderLists = deriveOrderListsFromItems(lastOrderItems)
+        const includeBrands = journey.type === 'ecommerce_online' || journey.type === 'ecommerce_instore'
         const payload = {
           id: makeId('evt_', ++eventIndex),
           time: timestamp,
@@ -391,11 +460,21 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
           items: lastOrderItems,
           value: orderValue,
           valueCurrency: lastOrderCurrency,
-          brands: orderLists.brands,
+          ...(includeBrands && { brands: orderLists.brands }),
           item_names: orderLists.item_names,
           categories: orderLists.categories,
           source,
           OrderType: orderType,
+        }
+        if (isSubscription && lineItems.length > 0) {
+          const subLine = lineItems[0]
+          payload.subscription_id = subLine.subscriptionId ?? subLine.id
+          payload.subscription_name = subLine.name
+          payload.subscription_started_at = new Date(subscriptionStartMs).toISOString()
+          const nextPaymentMs = subscriptionStartMs + placedOrderCountInRun * runPaymentIntervalDays * DAY_MS
+          payload.next_payment_date = new Date(nextPaymentMs).toISOString().slice(0, 10)
+          if (subLine.subscriptionInterval) payload.subscription_interval = subLine.subscriptionInterval
+          if (subLine.paymentInterval) payload.payment_interval = subLine.paymentInterval
         }
         if (source === 'instore' && runLocation) Object.assign(payload, runLocation)
         events.push(payload)
@@ -442,6 +521,7 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
         const checkoutItems = lineItemsToKlaviyoItems(checkoutLineItems, catalogTypeForLineItems)
         const cartValue = checkoutLineItems.reduce((sum, l) => sum + (l.price || 0) * (l.quantity || 1), 0)
         const checkoutLists = deriveOrderListsFromItems(checkoutItems)
+        const includeBrandsCheckout = journey.type === 'ecommerce_online' || journey.type === 'ecommerce_instore'
         events.push({
           id: makeId('evt_', ++eventIndex),
           time: timestamp,
@@ -453,7 +533,7 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
           value: cartValue,
           item_count: checkoutItems.length,
           currency: checkoutLineItems[0]?.currency ?? 'USD',
-          brands: checkoutLists.brands,
+          ...(includeBrandsCheckout && { brands: checkoutLists.brands }),
           item_names: checkoutLists.item_names,
           categories: checkoutLists.categories,
         })
@@ -472,7 +552,8 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
       if (['Fulfilled Order', 'Cancelled Order', 'Refunded Order'].includes(item.eventName)) {
         orderPayload.items = lastOrderItems
         const orderLists = deriveOrderListsFromItems(lastOrderItems)
-        orderPayload.brands = orderLists.brands
+        const includeBrandsOrder = journey.type === 'ecommerce_online' || journey.type === 'ecommerce_instore'
+        if (includeBrandsOrder) orderPayload.brands = orderLists.brands
         orderPayload.item_names = orderLists.item_names
         orderPayload.categories = orderLists.categories
         if (item.eventName === 'Refunded Order') {
@@ -483,6 +564,70 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
       }
       if (['Booking Checked in', 'Booking Attended', 'Booking Created'].includes(item.eventName) && runLocation) {
         Object.assign(orderPayload, runLocation)
+      }
+      const bookingEventNames = ['Booking Created', 'Booking Updated', 'Booking Reminder', 'Booking Confirmed', 'Booking Checked in', 'Booking Attended', 'Booking Not Attended', 'Booking Cancelled']
+      if (bookingEventNames.includes(item.eventName) && lineItems.length > 0) {
+        const runBookingService = lineItems[0]._bookingService
+        const bookingAtDays = runTimingProfile.bookingAtDaysFromCreate ?? 3
+        const bookingAtMs = runStartMs + bookingAtDays * DAY_MS
+        orderPayload.booking_created_at = new Date(runStartMs).toISOString()
+        if (runBookingService) {
+          const dateTypeRaw = typeof runBookingService.bookingDateType === 'string' ? runBookingService.bookingDateType.toLowerCase() : 'single date'
+          const isDateRange = dateTypeRaw === 'date range' || dateTypeRaw === 'date_range'
+          if (isDateRange) {
+            const minDays = Math.max(0, Number(runBookingService.dateRangeMinDays) || 0)
+            const maxDays = Math.max(0, Number(runBookingService.dateRangeMaxDays) || 0)
+            const rangeMin = minDays > 0 || maxDays > 0 ? minDays : 1
+            const rangeMax = minDays > 0 || maxDays > 0 ? Math.max(rangeMin, maxDays) : 3
+            const lengthDays = rangeMin === rangeMax ? rangeMin : rangeMin + Math.floor(Math.random() * (rangeMax - rangeMin + 1))
+            orderPayload.booking_from = new Date(bookingAtMs).toISOString()
+            orderPayload.booking_to = new Date(bookingAtMs + lengthDays * DAY_MS).toISOString()
+          } else {
+            orderPayload.booking_at = new Date(bookingAtMs).toISOString()
+          }
+          if (Array.isArray(runBookingService.bookingType) && runBookingService.bookingType.length > 0) {
+            orderPayload.booking_type = pickRandom(runBookingService.bookingType, null)
+          }
+        } else {
+          orderPayload.booking_at = new Date(bookingAtMs).toISOString()
+        }
+      }
+      if (isSubscription && runSubscriptionLineItem && ['Subscription Started', 'Subscription Renewed', 'Subscription Expiry Reminder', 'Subscription Expired', 'Subscription Cancelled'].includes(item.eventName)) {
+        orderPayload.subscription_id = runSubscriptionLineItem.subscriptionId ?? runSubscriptionLineItem.id
+        orderPayload.subscription_name = runSubscriptionLineItem.name
+        orderPayload.price = runSubscriptionLineItem.price
+        orderPayload.currency = runSubscriptionLineItem.currency ?? 'USD'
+        orderPayload.subscription_started_at = new Date(subscriptionStartMs).toISOString()
+        if (runSubscriptionLineItem.subscriptionInterval) orderPayload.subscription_interval = runSubscriptionLineItem.subscriptionInterval
+        if (runSubscriptionLineItem.paymentInterval) orderPayload.payment_interval = runSubscriptionLineItem.paymentInterval
+        if (item.eventName === 'Subscription Started') {
+          const nextPaymentMs = subscriptionStartMs + runPaymentIntervalDays * DAY_MS
+          orderPayload.next_payment_date = new Date(nextPaymentMs).toISOString().slice(0, 10)
+        }
+        if (item.eventName === 'Subscription Renewed') {
+          const nextPaymentMs = subscriptionStartMs + (subscriptionRenewalIndex + 1) * runPaymentIntervalDays * DAY_MS
+          orderPayload.next_payment_date = new Date(nextPaymentMs).toISOString().slice(0, 10)
+        }
+        const runSubCatalog = runChosenSubscription || defaultSubCatalog
+        const rawInterval = runSubCatalog?.subscriptionInterval ?? runSubCatalog?.subscriptionType ?? runSubCatalog?.interval ?? ''
+        const isYearly = /^yearly?$/i.test(String(rawInterval).trim())
+        if (item.eventName === 'Subscription Expired') {
+          const periodEndMs = subscriptionStartMs + 1 * runSubscriptionIntervalDays * DAY_MS
+          orderPayload.expires_at = new Date(periodEndMs).toISOString().slice(0, 10)
+        }
+        if (isYearly) {
+          if (item.eventName === 'Subscription Expiry Reminder') {
+            const periodEndMs = subscriptionStartMs + 1 * runSubscriptionIntervalDays * DAY_MS
+            orderPayload.expires_at = new Date(periodEndMs).toISOString().slice(0, 10)
+            const reminderOffsetsDays = [30, 7]
+            const idx = Math.min(subscriptionExpiryReminderIndex - 1, reminderOffsetsDays.length - 1)
+            if (idx >= 0) orderPayload.days_before_expiry = reminderOffsetsDays[idx]
+          }
+          if (item.eventName === 'Subscription Renewed') {
+            const periodEndMs = subscriptionStartMs + (subscriptionRenewalIndex + 1) * runSubscriptionIntervalDays * DAY_MS
+            orderPayload.expires_at = new Date(periodEndMs).toISOString().slice(0, 10)
+          }
+        }
       }
       events.push(orderPayload)
     }

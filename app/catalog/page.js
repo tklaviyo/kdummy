@@ -301,7 +301,9 @@ function ProductsServicesTab() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.name}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {item._type === 'subscription'
-                      ? (item.intervalCount != null && item.interval ? `${item.intervalCount} ${item.interval} • ` : '') +
+                      ? (item.subscriptionInterval || item.paymentInterval
+                          ? `${item.subscriptionInterval ?? '—'} / ${item.paymentInterval ?? '—'} • `
+                          : '') +
                         (item.currency && item.price != null ? `${item.currency} ${Number(item.price)}` : '—')
                       : `${item.currency || ''} ${typeof item.price === 'number' ? item.price.toFixed(2) : item.price ?? '—'}`}
                   </td>
