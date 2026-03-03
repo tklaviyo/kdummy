@@ -281,6 +281,146 @@ const defaultCountries = [
       { name: 'Delhi', state: 'DL', region: 'Delhi', zip: '110001', area_code: '11' },
       { name: 'Bangalore', state: 'KA', region: 'Karnataka', zip: '560001', area_code: '80' }
     ]
+  },
+  {
+    id: 'NZ',
+    name: 'New Zealand',
+    code: 'NZ',
+    phone_prefix: '+64',
+    phone_format: {
+      length: 9,
+      area_code_length: 1,
+      format: 'XX XXX XXXX'
+    },
+    locale: 'en-NZ',
+    address_format: {
+      has_state: false,
+      state_label: 'Region',
+      zip_label: 'Postcode',
+      zip_format: 'XXXX',
+      zip_required: true
+    },
+    currency: 'NZD',
+    timezone: 'Pacific/Auckland',
+    is_default: true,
+    enabled: true,
+    cities: [
+      { name: 'Auckland', state: null, region: 'Auckland', zip: '1010', area_code: '9' },
+      { name: 'Wellington', state: null, region: 'Wellington', zip: '6011', area_code: '4' },
+      { name: 'Christchurch', state: null, region: 'Canterbury', zip: '8011', area_code: '3' }
+    ]
+  },
+  {
+    id: 'CN',
+    name: 'China',
+    code: 'CN',
+    phone_prefix: '+86',
+    phone_format: {
+      length: 11,
+      area_code_length: 2,
+      format: 'XXX XXXX XXXX'
+    },
+    locale: 'zh-CN',
+    address_format: {
+      has_state: false,
+      state_label: 'Province',
+      zip_label: 'Postal Code',
+      zip_format: 'XXXXXX',
+      zip_required: true
+    },
+    currency: 'CNY',
+    timezone: 'Asia/Shanghai',
+    is_default: true,
+    enabled: true,
+    cities: [
+      { name: 'Beijing', state: null, region: 'Beijing', zip: '100000', area_code: '10' },
+      { name: 'Shanghai', state: null, region: 'Shanghai', zip: '200000', area_code: '21' },
+      { name: 'Guangzhou', state: null, region: 'Guangdong', zip: '510000', area_code: '20' }
+    ]
+  },
+  {
+    id: 'SG',
+    name: 'Singapore',
+    code: 'SG',
+    phone_prefix: '+65',
+    phone_format: {
+      length: 8,
+      area_code_length: 0,
+      format: 'XXXX XXXX'
+    },
+    locale: 'en-SG',
+    address_format: {
+      has_state: false,
+      state_label: 'Region',
+      zip_label: 'Postal Code',
+      zip_format: 'XXXXXX',
+      zip_required: true
+    },
+    currency: 'SGD',
+    timezone: 'Asia/Singapore',
+    is_default: true,
+    enabled: true,
+    cities: [
+      { name: 'Singapore', state: null, region: 'Central Region', zip: '018956', area_code: '' },
+      { name: 'Jurong East', state: null, region: 'West Region', zip: '609606', area_code: '' },
+      { name: 'Tampines', state: null, region: 'East Region', zip: '529510', area_code: '' }
+    ]
+  },
+  {
+    id: 'IT',
+    name: 'Italy',
+    code: 'IT',
+    phone_prefix: '+39',
+    phone_format: {
+      length: 10,
+      area_code_length: 2,
+      format: 'XXX XXX XXXX'
+    },
+    locale: 'it-IT',
+    address_format: {
+      has_state: false,
+      state_label: 'Province',
+      zip_label: 'CAP',
+      zip_format: 'XXXXX',
+      zip_required: true
+    },
+    currency: 'EUR',
+    timezone: 'Europe/Rome',
+    is_default: true,
+    enabled: true,
+    cities: [
+      { name: 'Rome', state: null, region: 'Lazio', zip: '00118', area_code: '06' },
+      { name: 'Milan', state: null, region: 'Lombardy', zip: '20121', area_code: '02' },
+      { name: 'Naples', state: null, region: 'Campania', zip: '80100', area_code: '081' }
+    ]
+  },
+  {
+    id: 'ES',
+    name: 'Spain',
+    code: 'ES',
+    phone_prefix: '+34',
+    phone_format: {
+      length: 9,
+      area_code_length: 2,
+      format: 'XXX XXX XXX'
+    },
+    locale: 'es-ES',
+    address_format: {
+      has_state: false,
+      state_label: 'Province',
+      zip_label: 'CP',
+      zip_format: 'XXXXX',
+      zip_required: true
+    },
+    currency: 'EUR',
+    timezone: 'Europe/Madrid',
+    is_default: true,
+    enabled: true,
+    cities: [
+      { name: 'Madrid', state: null, region: 'Madrid', zip: '28001', area_code: '91' },
+      { name: 'Barcelona', state: null, region: 'Catalonia', zip: '08001', area_code: '93' },
+      { name: 'Valencia', state: null, region: 'Valencia', zip: '46001', area_code: '96' }
+    ]
   }
 ]
 

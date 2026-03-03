@@ -276,7 +276,6 @@ function ProductsServicesTab() {
                   />
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -297,7 +296,6 @@ function ProductsServicesTab() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {getTemplate(item._type).label}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.id}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.name}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {item._type === 'subscription'
@@ -435,78 +433,17 @@ function CatalogItemModal({
 }
 
 // Locations Tab Component
-const LOCATION_TEMPLATE_GROUPS = [
-  {
-    id: 'retail',
-    label: 'Retail stores',
-    locations: [
-      { type: 'retail_store', name: 'Downtown Retail Store', address: '123 Main St', city: 'New York', state: 'NY', country: 'United States', postcode: '10001' },
-      { type: 'retail_store', name: 'Mall Retail Store', address: '200 Sunset Blvd', city: 'Los Angeles', state: 'CA', country: 'United States', postcode: '90001' },
-      { type: 'retail_store', name: 'Airport Retail Kiosk', address: '15 Terminal Rd', city: 'Chicago', state: 'IL', country: 'United States', postcode: '60601' },
-      { type: 'retail_store', name: 'City Centre Store', address: '50 High Street', city: 'London', state: '', country: 'United Kingdom', postcode: 'SW1A 1AA' },
-      { type: 'retail_store', name: 'Mall Store North', address: '75 Market Street', city: 'Manchester', state: '', country: 'United Kingdom', postcode: 'M1 1AA' },
-    ],
-  },
-  {
-    id: 'restaurant',
-    label: 'Restaurants',
-    locations: [
-      { type: 'restaurant', name: 'Riverside Restaurant', address: '50 Michigan Ave', city: 'Chicago', state: 'IL', country: 'United States', postcode: '60601' },
-      { type: 'restaurant', name: 'City Bistro', address: '10 Main St', city: 'New York', state: 'NY', country: 'United States', postcode: '10001' },
-      { type: 'restaurant', name: 'Harbour View Dining', address: '25 George Street', city: 'Sydney', state: 'NSW', country: 'Australia', postcode: '2000' },
-      { type: 'restaurant', name: 'Old Town Trattoria', address: '12 High Street', city: 'London', state: '', country: 'United Kingdom', postcode: 'SW1A 2AB' },
-      { type: 'restaurant', name: 'Market Square Café', address: '30 Market Street', city: 'Toronto', state: 'ON', country: 'Canada', postcode: 'M5H 2N2' },
-    ],
-  },
-  {
-    id: 'clinic',
-    label: 'Clinics',
-    locations: [
-      { type: 'clinic', name: 'City Health Clinic', address: '10 High Street', city: 'London', state: '', country: 'United Kingdom', postcode: 'SW1A 1AA' },
-      { type: 'clinic', name: 'Downtown Dental', address: '200 Elm St', city: 'New York', state: 'NY', country: 'United States', postcode: '10002' },
-      { type: 'clinic', name: 'Lakeside Physio', address: '14 Lakeview Rd', city: 'Chicago', state: 'IL', country: 'United States', postcode: '60602' },
-      { type: 'clinic', name: 'Harbour Medical', address: '5 Harbour Road', city: 'Sydney', state: 'NSW', country: 'Australia', postcode: '2001' },
-      { type: 'clinic', name: 'Market Street Health', address: '60 Market Street', city: 'Manchester', state: '', country: 'United Kingdom', postcode: 'M1 2BC' },
-    ],
-  },
-  {
-    id: 'gym',
-    label: 'Gyms & fitness clubs',
-    locations: [
-      { type: 'gym', name: 'Manchester Fitness Club', address: '75 Market Street', city: 'Manchester', state: '', country: 'United Kingdom', postcode: 'M1 1AA' },
-      { type: 'gym', name: 'Downtown Gym', address: '300 5th Ave', city: 'New York', state: 'NY', country: 'United States', postcode: '10003' },
-      { type: 'gym', name: 'Harbour Fitness', address: '40 Harbour Street', city: 'Sydney', state: 'NSW', country: 'Australia', postcode: '2002' },
-      { type: 'gym', name: 'Riverside Yoga Studio', address: '22 Riverside Dr', city: 'Chicago', state: 'IL', country: 'United States', postcode: '60603' },
-      { type: 'gym', name: 'City Spin Studio', address: '18 Queen Street', city: 'Toronto', state: 'ON', country: 'Canada', postcode: 'M5H 3N3' },
-    ],
-  },
-  {
-    id: 'theme_park',
-    label: 'Theme parks & attractions',
-    locations: [
-      { type: 'theme_park', name: 'Harbour Theme Park', address: '25 George Street', city: 'Sydney', state: 'NSW', country: 'Australia', postcode: '2000' },
-      { type: 'theme_park', name: 'Adventure World', address: '100 Park Way', city: 'Orlando', state: 'FL', country: 'United States', postcode: '32801' },
-      { type: 'theme_park', name: 'Coastal Fun Park', address: '80 Beach Rd', city: 'Los Angeles', state: 'CA', country: 'United States', postcode: '90002' },
-      { type: 'theme_park', name: 'City Amusements', address: '5 Fairground Rd', city: 'London', state: '', country: 'United Kingdom', postcode: 'SW1A 3CD' },
-      { type: 'theme_park', name: 'Maple Adventure Park', address: '60 Forest Lane', city: 'Toronto', state: 'ON', country: 'Canada', postcode: 'M5H 4P4' },
-    ],
-  },
-]
-
 function LocationsTab() {
   const { alert, confirm } = useConfirm()
   const [locations, setLocations] = useState([])
-  const [countries, setCountries] = useState([])
   const [loading, setLoading] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
-  const [selectedTemplateGroupId, setSelectedTemplateGroupId] = useState(LOCATION_TEMPLATE_GROUPS[0]?.id ?? '')
   const [editingLocation, setEditingLocation] = useState(null)
-  const [formData, setFormData] = useState({})
+  const [formData, setFormData] = useState({ name: '', address: '' })
   const [selectedItems, setSelectedItems] = useState(new Set())
 
   useEffect(() => {
     fetchLocations()
-    fetchCountries()
   }, [])
 
   const fetchLocations = async () => {
@@ -521,17 +458,6 @@ function LocationsTab() {
       setLoading(false)
     }
   }
-
-  const fetchCountries = async () => {
-    try {
-      const response = await fetchWithApiKey('/api/countries')
-      const data = await response.json()
-      setCountries(data.data || [])
-    } catch (error) {
-      console.error('Error fetching countries:', error)
-    }
-  }
-
 
   const handleBulkDelete = async () => {
     if (selectedItems.size === 0) {
@@ -558,18 +484,18 @@ function LocationsTab() {
 
   const handleAdd = () => {
     setEditingLocation(null)
-    setFormData({ name: '', type: '', address: '', city: '', country: '' })
+    setFormData({ name: '', address: '' })
     setShowAddModal(true)
   }
 
   const handleEdit = (location) => {
     setEditingLocation(location)
-    setFormData(location)
+    setFormData({ name: location.name || '', address: location.address || '' })
     setShowAddModal(true)
   }
 
   const handleSave = async () => {
-    if (!formData.name) {
+    if (!formData.name || !String(formData.name).trim()) {
       await alert('Location name is required')
       return
     }
@@ -577,13 +503,15 @@ function LocationsTab() {
     try {
       const url = '/api/data-catalog'
       const method = editingLocation ? 'PUT' : 'POST'
-      
+      const item = { name: String(formData.name).trim(), address: formData.address ? String(formData.address).trim() : '' }
+      if (editingLocation?.id) item.id = editingLocation.id
+
       const response = await fetchWithApiKey(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'locations',
-          item: formData,
+          item,
           id: editingLocation?.id
         })
       })
@@ -640,35 +568,6 @@ function LocationsTab() {
     }
   }
 
-  const generateFromTemplates = async (itemsToCreate) => {
-    const payload = Array.isArray(itemsToCreate) && itemsToCreate.length > 0
-      ? itemsToCreate
-      : (LOCATION_TEMPLATE_GROUPS.find(g => g.id === selectedTemplateGroupId)?.locations || [])
-    setLoading(true)
-    try {
-      const response = await fetchWithApiKey('/api/data-catalog', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'locations',
-          items: payload,
-        }),
-      })
-      if (response.ok) {
-        await alert(`${payload.length} location(s) created successfully`)
-        await fetchLocations()
-        setShowAddModal(false)
-      } else {
-        const error = await response.json()
-        await alert(error.errors?.[0]?.detail || 'Failed to create locations')
-      }
-    } catch (error) {
-      await alert(`Error: ${error.message}`)
-    } finally {
-      setLoading(false)
-    }
-  }
-
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
@@ -701,7 +600,7 @@ function LocationsTab() {
         <div className="text-center py-8 text-gray-500">Loading...</div>
       ) : locations.length === 0 ? (
         <div className="text-center py-8 text-gray-500">
-          No locations found. Generate sample data or add a location manually.
+          No locations found. Add a location to use in events and profile generation.
         </div>
       ) : (
         <div className="overflow-x-auto">
@@ -717,10 +616,7 @@ function LocationsTab() {
                   />
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Address</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">City</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Country</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
@@ -736,10 +632,7 @@ function LocationsTab() {
                     />
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{location.name}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{location.type || '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{location.address || '-'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{location.city || '-'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{location.country || '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <button
                       onClick={() => handleEdit(location)}
@@ -763,27 +656,13 @@ function LocationsTab() {
 
       {/* Add / Edit Modal */}
       {showAddModal && (
-        editingLocation ? (
-          <LocationModal
-            formData={formData}
-            setFormData={setFormData}
-            onSave={handleSave}
-            onClose={() => setShowAddModal(false)}
-            editingLocation={editingLocation}
-          />
-        ) : (
-          <LocationCreateModal
-            formData={formData}
-            setFormData={setFormData}
-            selectedTemplateGroupId={selectedTemplateGroupId}
-            setSelectedTemplateGroupId={setSelectedTemplateGroupId}
-            onManualSave={handleSave}
-            onGenerateTemplates={generateFromTemplates}
-            onClose={() => setShowAddModal(false)}
-            confirm={confirm}
-            loading={loading}
-          />
-        )
+        <LocationModal
+          formData={formData}
+          setFormData={setFormData}
+          onSave={handleSave}
+          onClose={() => setShowAddModal(false)}
+          editingLocation={editingLocation}
+        />
       )}
     </div>
   )
@@ -1297,12 +1176,10 @@ function CountriesTab() {
 
 // Location Modal Component
 function LocationModal({ formData, setFormData, onSave, onClose, editingLocation }) {
-  const standardKeys = ['name', 'type', 'address', 'city', 'state', 'country', 'postcode']
-
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white max-h-[90vh] overflow-y-auto">
-        <div className="mt-3">
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-start justify-center p-4">
+      <div className="relative top-16 mx-auto w-full max-w-md border shadow-lg rounded-lg bg-white overflow-hidden">
+        <div className="p-5">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-medium text-gray-900">
               {editingLocation ? 'Edit Location' : 'Add Location'}
@@ -1315,22 +1192,31 @@ function LocationModal({ formData, setFormData, onSave, onClose, editingLocation
             </button>
           </div>
 
-          <div className="space-y-4">
-            {standardKeys.map(key => (
-              <div key={key}>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {key === 'postcode' ? 'Postcode' : key.charAt(0).toUpperCase() + key.slice(1)}
-                </label>
-                <input
-                  type="text"
-                  value={formData[key] || ''}
-                  onChange={(e) => setFormData({ ...formData, [key]: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                />
-              </div>
-            ))}
+          <p className="text-sm text-gray-500 mb-4">Name is used in events; address is optional.</p>
 
-            <div className="flex justify-end space-x-3 pt-4">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+              <input
+                type="text"
+                value={formData.name || ''}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="e.g. Main Store"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Address (optional)</label>
+              <input
+                type="text"
+                value={formData.address || ''}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                placeholder="e.g. 123 Main St, City, Country"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+
+            <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200 mt-6">
               <button
                 onClick={onClose}
                 className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
@@ -1351,284 +1237,4 @@ function LocationModal({ formData, setFormData, onSave, onClose, editingLocation
   )
 }
 
-const EMPTY_LOCATION = { name: '', type: '', address: '', city: '', state: '', country: '', postcode: '' }
-
-// Location Create Modal (Manual or Template)
-function LocationCreateModal({
-  formData,
-  setFormData,
-  selectedTemplateGroupId,
-  setSelectedTemplateGroupId,
-  onManualSave,
-  onGenerateTemplates,
-  onClose,
-  confirm,
-  loading = false,
-}) {
-  const [mode, setMode] = useState('manual') // 'manual' | 'template'
-  const [locationItems, setLocationItems] = useState([])
-  const [currentLocationIndex, setCurrentLocationIndex] = useState(0)
-  const standardKeys = ['name', 'type', 'address', 'city', 'state', 'country', 'postcode']
-
-  const currentLocation = locationItems[currentLocationIndex] || null
-
-  // When template mode and template selection changes, load that template's locations (all on one step)
-  useEffect(() => {
-    if (mode !== 'template') return
-    const group = LOCATION_TEMPLATE_GROUPS.find((g) => g.id === selectedTemplateGroupId)
-    const list = (group?.locations || []).map((loc) => ({ ...loc }))
-    setLocationItems(list)
-    setCurrentLocationIndex(0)
-  }, [mode, selectedTemplateGroupId])
-
-  const updateCurrentLocation = (updates) => {
-    setLocationItems((prev) => {
-      const next = [...prev]
-      const current = next[currentLocationIndex]
-      if (!current) return prev
-      next[currentLocationIndex] = typeof updates === 'function' ? updates(current) : { ...current, ...updates }
-      return next
-    })
-  }
-
-  const handleCopyLocation = (index) => {
-    const item = locationItems[index]
-    const clone = { ...item }
-    delete clone.id
-    const next = [...locationItems.slice(0, index + 1), clone, ...locationItems.slice(index + 1)]
-    setLocationItems(next)
-    setCurrentLocationIndex(index + 1)
-  }
-
-  const handleRemoveLocation = async (index) => {
-    if (locationItems.length <= 1) return
-    const item = locationItems[index]
-    const label = (item?.name && String(item.name).trim()) || `Location ${index + 1}`
-    const ok = await confirm(`Remove "${label}" from the list?`, { confirmLabel: 'Remove', danger: true })
-    if (!ok) return
-    const next = locationItems.filter((_, i) => i !== index)
-    setLocationItems(next)
-    setCurrentLocationIndex((prev) => {
-      if (prev === index) return Math.min(prev, next.length - 1)
-      return prev > index ? prev - 1 : prev
-    })
-  }
-
-  const handleAddLocation = () => {
-    setLocationItems((prev) => [...prev, { ...EMPTY_LOCATION }])
-    setCurrentLocationIndex(locationItems.length)
-  }
-
-  const handleGenerateFromConfigure = () => {
-    const toCreate = locationItems.map((loc) => {
-      const { id, ...rest } = loc
-      return rest
-    })
-    onGenerateTemplates(toCreate)
-  }
-
-  return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-16 mx-auto p-6 border w-11/12 md:w-3/4 lg:max-w-5xl shadow-lg rounded-md bg-white max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-4">
-          <div>
-            <h3 className="text-lg font-medium text-gray-900">Add Location</h3>
-            <p className="text-sm text-gray-500 mt-1">
-              {mode === 'manual'
-                ? 'Enter the location details yourself.'
-                : 'Choose a business type, edit the list on the right (copy, remove, add), then Generate.'}
-            </p>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <span className="sr-only">Close</span>
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Mode selector */}
-        <div className="mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <button
-              type="button"
-              onClick={() => { setMode('manual'); setLocationItems([]) }}
-              className={`border rounded-lg px-4 py-3 text-left text-sm ${
-                mode === 'manual'
-                  ? 'border-indigo-600 bg-indigo-50'
-                  : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              <div className="font-medium text-gray-900">Manual</div>
-              <p className="text-gray-600 mt-1">
-                Enter the location details yourself (Name, Type, Address, City, Country, etc.).
-              </p>
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode('template')}
-              className={`border rounded-lg px-4 py-3 text-left text-sm ${
-                mode === 'template'
-                  ? 'border-indigo-600 bg-indigo-50'
-                  : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              <div className="font-medium text-gray-900">Template</div>
-              <p className="text-gray-600 mt-1">
-                Choose a business type, edit the list (copy, remove, add), then generate.
-              </p>
-            </button>
-          </div>
-        </div>
-
-        {mode === 'manual' ? (
-          <>
-            <div className="space-y-4">
-              {standardKeys.map((key) => (
-                <div key={key}>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {key === 'postcode' ? 'Postcode' : key.charAt(0).toUpperCase() + key.slice(1)}
-                  </label>
-                  <input
-                    type="text"
-                    value={formData[key] || ''}
-                    onChange={(e) => setFormData({ ...formData, [key]: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                  />
-                </div>
-              ))}
-            </div>
-            <div className="flex justify-end space-x-3 pt-6 mt-4 border-t">
-              <button
-                onClick={onClose}
-                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={onManualSave}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-              >
-                Save location
-              </button>
-            </div>
-          </>
-        ) : (
-          /* Template: dropdown + list left, form right — all on one step */
-          <>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Business type template</label>
-              <select
-                value={selectedTemplateGroupId}
-                onChange={(e) => setSelectedTemplateGroupId(e.target.value)}
-                className="w-full max-w-sm px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-              >
-                {LOCATION_TEMPLATE_GROUPS.map((group) => (
-                  <option key={group.id} value={group.id}>
-                    {group.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          <div className="grid grid-cols-1 md:grid-cols-[2fr_3fr] gap-6">
-            <div className="border border-gray-200 rounded-lg bg-gray-50 overflow-hidden min-w-0">
-              <div className="px-3 py-2.5 border-b border-gray-200 bg-white">
-                <div className="text-sm font-semibold text-gray-800">Locations ({locationItems.length})</div>
-                <p className="text-xs text-gray-500 mt-0.5">Click an item to edit on the right</p>
-              </div>
-              <ul className="p-2 space-y-1 max-h-[min(50vh,24rem)] overflow-y-auto">
-                {locationItems.map((item, i) => (
-                  <li key={i}>
-                    <div
-                      className={`flex items-center gap-2 rounded-lg px-2.5 py-2 group border ${
-                        currentLocationIndex === i
-                          ? 'bg-indigo-50 border-indigo-200 ring-1 ring-indigo-100'
-                          : 'border-transparent hover:bg-white hover:border-gray-200'
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => setCurrentLocationIndex(i)}
-                        className="flex-1 text-left text-sm font-medium text-gray-900 truncate min-w-0"
-                      >
-                        <span className="text-gray-400 font-normal mr-1">{i + 1}.</span>
-                        {(item.name && String(item.name).trim()) || `Location ${i + 1}`}
-                      </button>
-                      <div className="flex items-center gap-0.5 shrink-0">
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); handleCopyLocation(i) }}
-                          className="p-1.5 text-indigo-600 hover:bg-indigo-100 rounded-md text-xs font-medium"
-                          title="Copy this location"
-                        >
-                          Copy
-                        </button>
-                        <button
-                          type="button"
-                          onClick={async (e) => { e.stopPropagation(); await handleRemoveLocation(i) }}
-                          disabled={locationItems.length <= 1}
-                          className="p-1.5 text-red-600 hover:bg-red-100 rounded-md text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-                          title="Remove this location"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              <div className="p-2 border-t border-gray-200 bg-white">
-                <button
-                  type="button"
-                  onClick={handleAddLocation}
-                  className="w-full py-2.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50 rounded-lg border-2 border-dashed border-indigo-200 flex items-center justify-center gap-1"
-                >
-                  <span className="text-lg leading-none">+</span> Add item
-                </button>
-              </div>
-            </div>
-            <div className="min-w-0">
-              {currentLocation && (
-                <>
-                  <div className="text-sm text-gray-600 mb-3">
-                    <span className="font-medium text-gray-700">Editing:</span>{' '}
-                    {(currentLocation.name && String(currentLocation.name).trim()) || `Location ${currentLocationIndex + 1}`}
-                  </div>
-                  <div className="space-y-4">
-                    {standardKeys.map((key) => (
-                      <div key={key}>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          {key === 'postcode' ? 'Postcode' : key.charAt(0).toUpperCase() + key.slice(1)}
-                        </label>
-                        <input
-                          type="text"
-                          value={currentLocation[key] ?? ''}
-                          onChange={(e) => updateCurrentLocation({ [key]: e.target.value })}
-                          className="w-full max-w-md px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex justify-end space-x-3 pt-6 mt-4 border-t">
-                    <button onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleGenerateFromConfigure}
-                      disabled={loading}
-                      className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50"
-                    >
-                      {loading ? 'Generating...' : `Generate ${locationItems.length} location(s)`}
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-          </>
-        )}
-      </div>
-    </div>
-  )
-}
 

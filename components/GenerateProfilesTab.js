@@ -9,11 +9,11 @@ import { generatePhoneFromCountry } from '@/lib/countryUtils'
 import { getActiveApiKey, getActiveAccount } from '@/lib/storage'
 import { useConfirm } from '@/context/ConfirmContext'
 import { buildKlaviyoProfilePayload, buildKlaviyoSubscriptionPayload, channelsToConsent } from '@/lib/klaviyoPayloads'
-import { groupProperties, isDefaultProfileProperty } from '@/lib/profilePropertyGroups'
+import { groupProperties } from '@/lib/profilePropertyGroups'
 import { getCatalogItemsForSource } from '@/lib/defaultCatalogTemplates'
 import useRepeatOnHold from '@/lib/useRepeatOnHold'
 
-export default function GenerateProfilesTab() {
+export default function GenerateProfilesTab({ onAddCustomProperty, onEditCustomProperty }) {
   const router = useRouter()
   const { alert, confirm } = useConfirm()
   const [generating, setGenerating] = useState(false)
@@ -189,8 +189,7 @@ export default function GenerateProfilesTab() {
       
       const initialSelection = {}
       enabledProperties.forEach(prop => {
-        // Default (built-in) properties selected by default; custom properties deselected
-        initialSelection[prop.name] = isDefaultProfileProperty(prop)
+        initialSelection[prop.name] = false
       })
       setSelectedProperties(initialSelection)
     } catch (error) {
@@ -672,13 +671,13 @@ export default function GenerateProfilesTab() {
     }))
   }
 
-  const toggleAllProperties = () => {
-    const allSelected = Object.values(selectedProperties).every(v => v)
-    const newSelection = {}
-    availableProperties.forEach(prop => {
-      newSelection[prop.name] = !allSelected
+  const handleSelectAllProperties = () => {
+    const allSelected = availableProperties.length > 0 && availableProperties.every((p) => selectedProperties[p.name])
+    const next = {}
+    availableProperties.forEach((p) => {
+      next[p.name] = !allSelected
     })
-    setSelectedProperties(newSelection)
+    setSelectedProperties(next)
   }
 
   const updatePropertyValue = (propertyName, value) => {
@@ -718,6 +717,441 @@ export default function GenerateProfilesTab() {
       />
     </button>
   )
+
+  const propertyGroups = groupProperties(availableProperties)
+  const currentProperties =
+    activePropertyGroupId === 'all'
+      ? availableProperties
+      : (propertyGroups.find((g) => g.groupId === activePropertyGroupId) || { properties: [] }).properties
+  const propertyNavItems = [{ id: 'all', label: 'All properties' }, ...propertyGroups.map((g) => ({ id: g.groupId, label: g.label }))]
+  const midIndex = Math.ceil(currentProperties.length / 2)
+  const leftPropertyList = currentProperties.slice(0, midIndex)
+  const rightPropertyList = currentProperties.slice(midIndex)
+
+  const renderMultiProfileHint = (property) => {
+    const src = property.catalog_source && (property.catalog_source === 'stores' ? 'locations' : property.catalog_source)
+    if (src) {
+      return <p className="text-xs text-gray-500">Random value from {src} data in your Data Catalog.</p>
+    }
+    if (property.type === 'date') {
+      if (property.date_range_preset === 'last_12_months') {
+        return <p className="text-xs text-gray-500">Random date in the last 12 months.</p>
+      }
+      if (property.date_range_preset === 'last_24_months') {
+        return <p className="text-xs text-gray-500">Random date in the last 24 months.</p>
+      }
+      if (property.date_min || property.date_max) {
+        const from = property.date_min || 'start'
+        const to = property.date_max || 'today'
+        return <p className="text-xs text-gray-500">Random date between {from} and {to}.</p>
+      }
+      return <p className="text-xs text-gray-500">Random date based on this property's date settings.</p>
+    }
+    if ((property.type === 'integer' || property.type === 'decimal') && (property.integer_min != null || property.integer_max != null)) {
+      const min = property.integer_min != null ? property.integer_min : 0
+      const max = property.integer_max != null ? property.integer_max : '∞'
+      const label = property.type === 'integer' ? 'integer' : 'number'
+      return <p className="text-xs text-gray-500">Random {label} between {min} and {max}.</p>
+    }
+    if (property.type === 'array') {
+      if (property.array_min_items != null || property.array_max_items != null) {
+        const min = property.array_min_items != null ? property.array_min_items : 0
+        const max = property.array_max_items != null ? property.array_max_items : min
+        const rangeText = min === max ? String(min) : `${min}–${max}`
+        const optionsText =
+          property.options && property.options.length > 0 ? ` from options: ${property.options.join(', ')}` : ''
+        return (
+          <p className="text-xs text-gray-500">
+            Random list with {rangeText} value{min === 1 && max === 1 ? '' : 's'}
+            {optionsText}.
+          </p>
+        )
+      }
+      if (property.options && property.options.length > 0) {
+        const optionsText = property.options.join(', ')
+        return <p className="text-xs text-gray-500">Random subset of options: {optionsText}.</p>
+      }
+      return <p className="text-xs text-gray-500">Random list of values for this property.</p>
+    }
+    if (property.type === 'boolean') {
+      return <p className="text-xs text-gray-500">Random true/false based on this property's default.</p>
+    }
+    if (property.options && property.options.length > 0) {
+      const optionsText = property.options.join(', ')
+      return <p className="text-xs text-gray-500">Random value from options: {optionsText}.</p>
+    }
+    return <p className="text-xs text-gray-500">Random value based on this property's default.</p>
+  }
+
+  const renderSingleProfileControl = (property) => {
+    if (property.catalog_source) {
+      const source = property.catalog_source === 'stores' ? 'locations' : property.catalog_source
+
+      if (source === 'products' || source === 'services' || source === 'subscriptions') {
+        return (
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Enter value manually:</label>
+            <input
+              type="text"
+              value={propertyValues[property.name] || ''}
+              onChange={(e) => updatePropertyValue(property.name, e.target.value)}
+              placeholder="Enter value"
+              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+            />
+          </div>
+        )
+      }
+
+      const catalogItems = getCatalogItemsForSource(source, catalogData, true)
+      const displayField = property.object_property_mapping || 'name'
+
+      if (catalogItems.length > 0) {
+        if (property.type === 'array') {
+          const selectedValues = Array.isArray(propertyValues[property.name]) ? propertyValues[property.name] : []
+          const isOpen = openMultiSelects[property.name] || false
+
+          return (
+            <div className="relative" data-multiselect>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Select values (multiple):</label>
+              <button
+                type="button"
+                onClick={() => toggleMultiSelect(property.name)}
+                className="w-full px-2 py-1.5 text-left border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white flex justify-between items-center text-sm"
+              >
+                <span className="text-sm text-gray-700">
+                  {selectedValues.length > 0 ? `${selectedValues.length} selected` : 'Select options...'}
+                </span>
+                <svg
+                  className={`h-4 w-4 text-gray-400 transition-transform ${isOpen ? 'transform rotate-180' : ''}`}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {isOpen && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-56 overflow-y-auto">
+                  <div className="p-1.5">
+                    {catalogItems.map((item) => {
+                      const value = item[displayField] || item.id || item.name
+                      const label = item[displayField] || item.name || item.id
+                      const isChecked = selectedValues.includes(value)
+
+                      return (
+                        <label
+                          key={item.id || value}
+                          className="flex items-center p-1.5 hover:bg-gray-50 rounded cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => handleMultiSelectChange(property.name, value, e.target.checked)}
+                            className="w-3.5 h-3.5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                          />
+                          <span className="ml-2 text-sm text-gray-900">{label}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+              {selectedValues.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {selectedValues.map((selected) => (
+                    <span
+                      key={selected}
+                      className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800"
+                    >
+                      {selected}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = selectedValues.filter((v) => v !== selected)
+                          updatePropertyValue(property.name, updated)
+                        }}
+                        className="ml-2 text-indigo-600 hover:text-indigo-900"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        }
+
+        const catalogValues = catalogItems.map((item) => item[displayField] || item.id || item.name)
+        const currentVal = propertyValues[property.name] || ''
+        const fromCatalog = catalogValues.includes(currentVal)
+
+        return (
+          <div className="space-y-2">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Select from catalog or enter manually:
+              </label>
+              <select
+                value={fromCatalog ? currentVal : ''}
+                onChange={(e) => updatePropertyValue(property.name, e.target.value)}
+                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+              >
+                <option value="">Select (optional)</option>
+                {catalogItems.map((item) => {
+                  const value = item[displayField] || item.id || item.name
+                  const label = item[displayField] || item.name || item.id
+                  return (
+                    <option key={item.id || value} value={value}>
+                      {label}
+                    </option>
+                  )
+                })}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Or enter value manually:</label>
+              <input
+                type="text"
+                value={!fromCatalog ? currentVal : ''}
+                onChange={(e) => updatePropertyValue(property.name, e.target.value)}
+                placeholder="Type a value"
+                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+          </div>
+        )
+      }
+
+      return (
+        <p className="text-sm text-gray-500">
+          No {property.catalog_source} data available. Add items in Data Catalog or use default template in Configure.
+        </p>
+      )
+    }
+
+    if (property.type === 'array' && property.options && property.options.length > 0) {
+      const selectedValues = Array.isArray(propertyValues[property.name]) ? propertyValues[property.name] : []
+      const isOpen = openMultiSelects[property.name] || false
+
+      return (
+        <div className="relative" data-multiselect>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Select values (multiple):</label>
+          <button
+            type="button"
+            onClick={() => toggleMultiSelect(property.name)}
+            className="w-full px-2 py-1.5 text-left border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white flex justify-between items-center text-sm"
+          >
+            <span className="text-sm text-gray-700">
+              {selectedValues.length > 0 ? `${selectedValues.length} selected` : 'Select options...'}
+            </span>
+            <svg
+              className={`h-4 w-4 text-gray-400 transition-transform ${isOpen ? 'transform rotate-180' : ''}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {isOpen && (
+            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-56 overflow-y-auto">
+              <div className="p-1.5">
+                {property.options.map((option) => {
+                  const isChecked = selectedValues.includes(option)
+
+                  return (
+                    <label
+                      key={option}
+                      className="flex items-center p-1.5 hover:bg-gray-50 rounded cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => handleMultiSelectChange(property.name, option, e.target.checked)}
+                        className="w-3.5 h-3.5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                      />
+                      <span className="ml-2 text-sm text-gray-900">{option}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+          {selectedValues.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {selectedValues.map((selected) => (
+                <span
+                  key={selected}
+                  className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800"
+                >
+                  {selected}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated = selectedValues.filter((v) => v !== selected)
+                      updatePropertyValue(property.name, updated)
+                    }}
+                    className="ml-2 text-indigo-600 hover:text-indigo-900"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )
+    }
+
+    if (property.options && property.options.length > 0) {
+      return (
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Select value:</label>
+          <select
+            value={propertyValues[property.name] || ''}
+            onChange={(e) => updatePropertyValue(property.name, e.target.value)}
+            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+          >
+            <option value="">Select {property.name} (optional - will generate if empty)</option>
+            {property.options.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </div>
+      )
+    }
+
+    if (property.type === 'date') {
+      return (
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Select date:</label>
+          <input
+            type="date"
+            value={propertyValues[property.name] || ''}
+            onChange={(e) => updatePropertyValue(property.name, e.target.value)}
+            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+          />
+        </div>
+      )
+    }
+
+    if (property.type === 'boolean') {
+      return (
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Select value:</label>
+          <select
+            value={propertyValues[property.name] !== undefined ? String(propertyValues[property.name]) : ''}
+            onChange={(e) => updatePropertyValue(property.name, e.target.value === 'true')}
+            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+          >
+            <option value="">Select (optional - will generate if empty)</option>
+            <option value="true">True</option>
+            <option value="false">False</option>
+          </select>
+        </div>
+      )
+    }
+
+    return (
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">Enter value:</label>
+        <input
+          type={property.type === 'integer' || property.type === 'decimal' ? 'number' : 'text'}
+          step={property.type === 'decimal' ? '0.01' : undefined}
+          value={propertyValues[property.name] || ''}
+          onChange={(e) => updatePropertyValue(property.name, e.target.value)}
+          placeholder={`Enter ${property.name} (optional - will generate if empty)`}
+          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+        />
+      </div>
+    )
+  }
+
+  const renderPropertyCard = (property) => {
+    const isSelected = !!selectedProperties[property.name]
+
+    return (
+      <div key={property.name} className="border border-gray-200 rounded-lg p-4 min-h-[120px] flex flex-col">
+        <div className="flex items-start justify-between gap-2 mb-1.5">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-medium text-gray-900">{property.name}</span>
+              <span className="text-xs text-gray-500">({property.type})</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
+              {property.catalog_source && (
+                <span className="px-1.5 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded">
+                  {property.catalog_source}
+                </span>
+              )}
+              {property.required && (
+                <span className="px-1.5 py-0.5 text-xs font-medium bg-red-100 text-red-800 rounded">Required</span>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isSelected}
+            onClick={() => toggleProperty(property.name)}
+            className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
+              isSelected ? 'bg-indigo-600' : 'bg-gray-200'
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                isSelected ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+        <div className="min-w-0">
+          {isSelected && (
+            <div className="mt-2">
+              {count > 1 ? renderMultiProfileHint(property) : renderSingleProfileControl(property)}
+            </div>
+          )}
+        </div>
+        <div className="mt-3 pt-3 border-t border-gray-200 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            {count === 1 && isSelected && (
+              <button
+                type="button"
+                onClick={() => {
+                  const v = getOneGeneratedPropertyValue(property, null, null)
+                  if (v !== null && v !== undefined) updatePropertyValue(property.name, v)
+                }}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-800"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden>
+                  <path fillRule="evenodd" d="M11.983 1.907a.75.75 0 00-1.292-.657l-8.5 9.5A.75.75 0 002.75 12h6.572l-1.305 6.093a.75.75 0 001.292.657l8.5-9.5A.75.75 0 0017.25 8h-6.572l1.305-6.093z" clipRule="evenodd" />
+                </svg>
+                Generate
+              </button>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (onEditCustomProperty) {
+                onEditCustomProperty(property.name)
+              } else {
+                router.push(
+                  `/profiles?tab=configure&action=edit&property=${encodeURIComponent(property.name)}`
+                )
+              }
+            }}
+            className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+          >
+            Edit
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -1256,7 +1690,6 @@ export default function GenerateProfilesTab() {
               <Toggle checked={includeLocation} onChange={setIncludeLocation} />
               <h3 className="text-sm font-medium text-gray-700">Include location</h3>
             </div>
-            <p className="text-sm text-gray-500 mb-3">Address and locale will be randomly generated from selected country/countries.</p>
             {includeLocation && (
               count === 1 ? (
                 <div className="mt-4 space-y-4">
@@ -1297,366 +1730,66 @@ export default function GenerateProfilesTab() {
 
       {/* 4. Custom Properties */}
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-        <div className="bg-gradient-to-r from-indigo-50 to-white px-6 py-4 border-b border-gray-200 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">
-              <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white text-sm font-bold mr-3">4</span>
-              Custom properties
-            </h2>
-            <p className="text-sm text-gray-500 mt-1 ml-11">Properties and their default settings (types, catalog, ranges) are defined in the Configure tab. Single profile: select values or use Generate to fill with random. Multiple profiles: values are generated randomly from catalog, ranges, and defaults.</p>
-          </div>
-          <button type="button" onClick={toggleAllProperties} className="text-sm font-medium text-indigo-600 hover:text-indigo-800">
-            {Object.values(selectedProperties).every((v) => v) ? 'Deselect all' : 'Select all'}
-          </button>
+        <div className="bg-gradient-to-r from-indigo-50 to-white px-6 py-4 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900 flex items-center">
+            <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white text-sm font-bold mr-3">
+              4
+            </span>
+            Custom properties
+          </h2>
+          <p className="text-sm text-gray-500 mt-1 ml-11">
+            Optional properties to include on profiles. Define them in the Configure tab; toggle which to include here.
+          </p>
         </div>
         <div className="p-6 border border-t-0 border-gray-200 rounded-b-lg">
+          <div className="flex flex-wrap justify-end mb-4">
+            <button
+              type="button"
+              onClick={() => {
+                if (onAddCustomProperty) {
+                  onAddCustomProperty()
+                } else {
+                  router.push('/profiles?tab=configure&action=add')
+                }
+              }}
+              className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition-colors text-sm font-medium"
+            >
+              Add property
+            </button>
+          </div>
           {availableProperties.length === 0 ? (
-            <p className="text-sm text-gray-500 text-center py-2">No properties available. Configure properties first.</p>
-          ) : (() => {
-            const grouped = groupProperties(availableProperties)
-            const currentProps = activePropertyGroupId === 'all' ? availableProperties : (grouped.find((g) => g.groupId === activePropertyGroupId) || { properties: [] }).properties
-            const navItems = [{ id: 'all', label: 'All properties' }, ...grouped.map((g) => ({ id: g.groupId, label: g.label }))]
-            const mid = Math.ceil(currentProps.length / 2)
-            const leftProps = currentProps.slice(0, mid)
-            const rightProps = currentProps.slice(mid)
-            const renderPropertyCard = (property) => (
-                <div key={property.name} className="border border-gray-200 rounded-lg p-3">
-                  <div className="flex items-start justify-between gap-2 mb-1.5">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-medium text-gray-900">{property.name}</span>
-                        <span className="text-xs text-gray-500">({property.type})</span>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5 mt-1.5">
-                        {property.catalog_source && (
-                          <span className="px-1.5 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded">
-                            {property.catalog_source}
-                          </span>
-                        )}
-                        {property.required && (
-                          <span className="px-1.5 py-0.5 text-xs font-medium bg-red-100 text-red-800 rounded">
-                            Required
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {count === 1 && selectedProperties[property.name] && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const v = getOneGeneratedPropertyValue(property, null, null)
-                            if (v !== null && v !== undefined) updatePropertyValue(property.name, v)
-                          }}
-                          className="text-xs font-medium text-indigo-600 hover:text-indigo-800 whitespace-nowrap"
-                        >
-                          Generate
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={selectedProperties[property.name] || false}
-                        onClick={() => toggleProperty(property.name)}
-                        className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${(selectedProperties[property.name] || false) ? 'bg-indigo-600' : 'bg-gray-200'}`}
-                      >
-                        <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${(selectedProperties[property.name] || false) ? 'translate-x-5' : 'translate-x-0'}`} />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="min-w-0">
-                    {selectedProperties[property.name] && (
-                        <div className="mt-2">
-                          {count > 1 ? (
-                            <p className="text-xs text-gray-500">Random value will be generated from catalog, ranges, or defaults.</p>
-                          ) : (
-                          <>
-                          {property.catalog_source ? (
-                            (() => {
-                              const source = property.catalog_source === 'stores' ? 'locations' : property.catalog_source
-                              if (source === 'products' || source === 'services' || source === 'subscriptions') {
-                                return (
-                                  <div>
-                                    <label className="block text-xs font-medium text-gray-700 mb-1">Enter value manually:</label>
-                                    <input
-                                      type="text"
-                                      value={propertyValues[property.name] || ''}
-                                      onChange={(e) => updatePropertyValue(property.name, e.target.value)}
-                                      placeholder="Enter value"
-                                      className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                                    />
-                                  </div>
-                                )
-                              }
-                              const catalogItems = getCatalogItemsForSource(source, catalogData, true)
-                              const displayField = property.object_property_mapping || 'name'
-                              
-                              if (catalogItems.length > 0) {
-                                if (property.type === 'array') {
-                                  const selectedValues = Array.isArray(propertyValues[property.name]) ? propertyValues[property.name] : []
-                                  const isOpen = openMultiSelects[property.name] || false
-                                  
-                                  return (
-                                    <div className="relative" data-multiselect>
-                                      <label className="block text-xs font-medium text-gray-700 mb-1">Select values (multiple):</label>
-                                      <button
-                                        type="button"
-                                        onClick={() => toggleMultiSelect(property.name)}
-                                        className="w-full px-2 py-1.5 text-left border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white flex justify-between items-center text-sm"
-                                      >
-                                        <span className="text-sm text-gray-700">
-                                          {selectedValues.length > 0 
-                                            ? `${selectedValues.length} selected` 
-                                            : 'Select options...'}
-                                        </span>
-                                        <svg className={`h-4 w-4 text-gray-400 transition-transform ${isOpen ? 'transform rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                        </svg>
-                                      </button>
-                                      {isOpen && (
-                                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-56 overflow-y-auto">
-                                          <div className="p-1.5">
-                                            {catalogItems.map((item) => {
-                                              const value = item[displayField] || item.id || item.name
-                                              const label = item[displayField] || item.name || item.id
-                                              const isChecked = selectedValues.includes(value)
-                                              
-                                              return (
-                                                <label
-                                                  key={item.id || value}
-                                                  className="flex items-center p-1.5 hover:bg-gray-50 rounded cursor-pointer"
-                                                >
-                                                  <input
-                                                    type="checkbox"
-                                                    checked={isChecked}
-                                                    onChange={(e) => handleMultiSelectChange(property.name, value, e.target.checked)}
-                                                    className="w-3.5 h-3.5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                                                  />
-                                                  <span className="ml-2 text-sm text-gray-900">{label}</span>
-                                                </label>
-                                              )
-                                            })}
-                                          </div>
-                                        </div>
-                                      )}
-                                      {selectedValues.length > 0 && (
-                                        <div className="mt-2 flex flex-wrap gap-1.5">
-                                          {selectedValues.map((selected) => (
-                                            <span
-                                              key={selected}
-                                              className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800"
-                                            >
-                                              {selected}
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  const updated = selectedValues.filter(v => v !== selected)
-                                                  updatePropertyValue(property.name, updated)
-                                                }}
-                                                className="ml-2 text-indigo-600 hover:text-indigo-900"
-                                              >
-                                                ×
-                                              </button>
-                                            </span>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </div>
-                                  )
-                                } else {
-                                  const catalogValues = catalogItems.map((item) => item[displayField] || item.id || item.name)
-                                  const currentVal = propertyValues[property.name] || ''
-                                  const fromCatalog = catalogValues.includes(currentVal)
-                                  return (
-                                    <div className="space-y-2">
-                                      <div>
-                                        <label className="block text-xs font-medium text-gray-700 mb-1">Select from catalog or enter manually:</label>
-                                        <select
-                                          value={fromCatalog ? currentVal : ''}
-                                          onChange={(e) => updatePropertyValue(property.name, e.target.value)}
-                                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                                        >
-                                          <option value="">Select (optional)</option>
-                                          {catalogItems.map((item) => {
-                                            const value = item[displayField] || item.id || item.name
-                                            const label = item[displayField] || item.name || item.id
-                                            return (
-                                              <option key={item.id || value} value={value}>{label}</option>
-                                            )
-                                          })}
-                                        </select>
-                                      </div>
-                                      <div>
-                                        <label className="block text-xs font-medium text-gray-500 mb-1">Or enter value manually:</label>
-                                        <input
-                                          type="text"
-                                          value={!fromCatalog ? currentVal : ''}
-                                          onChange={(e) => updatePropertyValue(property.name, e.target.value)}
-                                          placeholder="Type a value"
-                                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                                        />
-                                      </div>
-                                    </div>
-                                  )
-                                }
-                              }
-                              return <p className="text-sm text-gray-500">No {property.catalog_source} data available. Add items in Data Catalog or use default template in Configure.</p>
-                            })()
-                          ) : property.type === 'array' && property.options && property.options.length > 0 ? (
-                            (() => {
-                              const selectedValues = Array.isArray(propertyValues[property.name]) ? propertyValues[property.name] : []
-                              const isOpen = openMultiSelects[property.name] || false
-                              
-                              return (
-                                <div className="relative" data-multiselect>
-                                  <label className="block text-xs font-medium text-gray-700 mb-1">Select values (multiple):</label>
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleMultiSelect(property.name)}
-                                    className="w-full px-2 py-1.5 text-left border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white flex justify-between items-center text-sm"
-                                  >
-                                    <span className="text-sm text-gray-700">
-                                      {selectedValues.length > 0 
-                                        ? `${selectedValues.length} selected` 
-                                        : 'Select options...'}
-                                    </span>
-                                    <svg className={`h-4 w-4 text-gray-400 transition-transform ${isOpen ? 'transform rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                    </svg>
-                                  </button>
-                                  {isOpen && (
-                                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-56 overflow-y-auto">
-                                      <div className="p-1.5">
-                                        {property.options.map((option) => {
-                                          const isChecked = selectedValues.includes(option)
-                                          
-                                          return (
-                                            <label
-                                              key={option}
-                                              className="flex items-center p-1.5 hover:bg-gray-50 rounded cursor-pointer"
-                                            >
-                                              <input
-                                                type="checkbox"
-                                                checked={isChecked}
-                                                onChange={(e) => handleMultiSelectChange(property.name, option, e.target.checked)}
-                                                className="w-3.5 h-3.5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                                              />
-                                              <span className="ml-2 text-sm text-gray-900">{option}</span>
-                                            </label>
-                                          )
-                                        })}
-                                      </div>
-                                    </div>
-                                  )}
-                                  {selectedValues.length > 0 && (
-                                    <div className="mt-2 flex flex-wrap gap-1.5">
-                                      {selectedValues.map((selected) => (
-                                        <span
-                                          key={selected}
-                                          className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800"
-                                        >
-                                          {selected}
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const updated = selectedValues.filter(v => v !== selected)
-                                              updatePropertyValue(property.name, updated)
-                                            }}
-                                            className="ml-2 text-indigo-600 hover:text-indigo-900"
-                                          >
-                                            ×
-                                          </button>
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                            })()
-                          ) : property.options && property.options.length > 0 ? (
-                            <div>
-                              <label className="block text-xs font-medium text-gray-700 mb-1">Select value:</label>
-                              <select
-                                value={propertyValues[property.name] || ''}
-                                onChange={(e) => updatePropertyValue(property.name, e.target.value)}
-                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                              >
-                                <option value="">Select {property.name} (optional - will generate if empty)</option>
-                                {property.options.map((option) => (
-                                  <option key={option} value={option}>{option}</option>
-                                ))}
-                              </select>
-                            </div>
-                          ) : property.type === 'date' ? (
-                            <div>
-                              <label className="block text-xs font-medium text-gray-700 mb-1">Select date:</label>
-                              <input
-                                type="date"
-                                value={propertyValues[property.name] || ''}
-                                onChange={(e) => updatePropertyValue(property.name, e.target.value)}
-                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                              />
-                            </div>
-                          ) : property.type === 'boolean' ? (
-                            <div>
-                              <label className="block text-xs font-medium text-gray-700 mb-1">Select value:</label>
-                              <select
-                                value={propertyValues[property.name] !== undefined ? String(propertyValues[property.name]) : ''}
-                                onChange={(e) => updatePropertyValue(property.name, e.target.value === 'true')}
-                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                              >
-                                <option value="">Select (optional - will generate if empty)</option>
-                                <option value="true">True</option>
-                                <option value="false">False</option>
-                              </select>
-                            </div>
-                          ) : (
-                            <div>
-                              <label className="block text-xs font-medium text-gray-700 mb-1">Enter value:</label>
-                              <input
-                                type={property.type === 'integer' || property.type === 'decimal' ? 'number' : 'text'}
-                                step={property.type === 'decimal' ? '0.01' : undefined}
-                                value={propertyValues[property.name] || ''}
-                                onChange={(e) => updatePropertyValue(property.name, e.target.value)}
-                                placeholder={`Enter ${property.name} (optional - will generate if empty)`}
-                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                              />
-                            </div>
-                          )}
-                          </>
-                          )}
-                        </div>
-                      )}
-                  </div>
-                </div>
-            )
-            return (
-              <div className="grid grid-cols-1 md:grid-cols-[1fr_2fr_2fr] gap-0 min-h-0">
-                <aside className="md:min-w-0 border-b md:border-b-0 md:border-r border-gray-200 flex-shrink-0 p-2">
-                  <nav className="flex md:flex-col gap-0 overflow-x-auto md:overflow-x-visible md:overflow-y-auto" aria-label="Property categories">
-                    {navItems.map(({ id, label }) => (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => setActivePropertyGroupId(id)}
-                        className={`w-full text-left py-2.5 px-3 rounded-md text-sm font-medium whitespace-nowrap ${
-                          activePropertyGroupId === id ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </nav>
-                </aside>
-                <div className="min-w-0 p-2 overflow-auto space-y-3">
-                  {leftProps.map(renderPropertyCard)}
-                </div>
-                <div className="min-w-0 p-2 overflow-auto space-y-3">
-                  {rightProps.map(renderPropertyCard)}
-                </div>
+            <p className="text-sm text-gray-500 text-center py-2">
+              No properties available. Configure properties first.
+            </p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                <select
+                  value={activePropertyGroupId}
+                  onChange={(e) => setActivePropertyGroupId(e.target.value)}
+                  aria-label="Property category"
+                  className="block w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                >
+                  {propertyNavItems.map(({ id, label }) => (
+                    <option key={id} value={id}>{label}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleSelectAllProperties}
+                  className="text-sm font-medium text-indigo-600 hover:text-indigo-800 shrink-0"
+                >
+                  {availableProperties.every((p) => selectedProperties[p.name])
+                    ? 'Deselect all'
+                    : 'Select all'}
+                </button>
               </div>
-            )
-          })()}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-3">{leftPropertyList.map(renderPropertyCard)}</div>
+                <div className="space-y-3">{rightPropertyList.map(renderPropertyCard)}</div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 

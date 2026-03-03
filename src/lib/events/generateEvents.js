@@ -258,6 +258,8 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
   const profileEmails = useProvidedProfiles
     ? options.profileEmails
     : profileIds.map((id, i) => getProfileEmailAndName(i, PROFILE_EMAIL_DOMAIN).email)
+  const profileFirstNames = useProvidedProfiles ? null : profileIds.map((_, i) => getProfileEmailAndName(i, PROFILE_EMAIL_DOMAIN).firstName)
+  const profileLastNames = useProvidedProfiles ? null : profileIds.map((_, i) => getProfileEmailAndName(i, PROFILE_EMAIL_DOMAIN).lastName)
   const totalRuns = profileIds.length * journeysPerProfile
   const productsPerOrderOpts = (options.productsPerOrderMin != null || options.productsPerOrderMax != null)
     ? { productsPerOrderMin: options.productsPerOrderMin ?? 1, productsPerOrderMax: options.productsPerOrderMax ?? 3 }
@@ -309,6 +311,9 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
     const profileIndex = Math.floor(run / journeysPerProfile)
     const profileId = profileIds[profileIndex]
     const profileEmail = profileEmails[profileIndex]
+    const profileNameFields = profileFirstNames && profileLastNames
+      ? { profileFirstName: profileFirstNames[profileIndex], profileLastName: profileLastNames[profileIndex] }
+      : {}
     const runStartMs = startMs + (run / Math.max(1, totalRuns)) * usableRangeMs
     const runLocation =
       locationsList.length > 0 ? toEventLocation(pickRandom(locationsList, null)) : null
@@ -426,6 +431,7 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
             eventName: 'Ordered Product',
             profileId,
             profileEmail,
+            ...profileNameFields,
             orderId: lastOrderId,
             lineItem: line,
             value: (line.price || 0) * (line.quantity || 1),
@@ -456,6 +462,7 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
           eventName: 'Placed Order',
           profileId,
           profileEmail,
+          ...profileNameFields,
           orderId: lastOrderId,
           items: lastOrderItems,
           value: orderValue,
@@ -491,6 +498,7 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
             eventName: 'Viewed Product',
             profileId,
             profileEmail,
+            ...profileNameFields,
             lineItem: line,
             value: (line.price || 0) * (line.quantity || 1),
             valueCurrency: line.currency || 'USD',
@@ -508,6 +516,7 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
             eventName: 'Added to Cart',
             profileId,
             profileEmail,
+            ...profileNameFields,
             lineItem: line,
             value: (line.price || 0) * (line.quantity || 1),
             valueCurrency: line.currency || 'USD',
@@ -529,6 +538,7 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
           eventName: 'Started Checkout',
           profileId,
           profileEmail,
+          ...profileNameFields,
           items: checkoutItems,
           value: cartValue,
           item_count: checkoutItems.length,
@@ -547,6 +557,7 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
         eventName: item.eventName,
         profileId,
         profileEmail,
+        ...profileNameFields,
         ...(lastOrderId && { orderId: lastOrderId }),
       }
       if (['Fulfilled Order', 'Cancelled Order', 'Refunded Order'].includes(item.eventName)) {
@@ -660,6 +671,7 @@ export function generateEvents({ journeyId, selectedEventNames, catalog, options
     eventCounts,
     profileIds,
     profileEmails,
+    ...(profileFirstNames && profileLastNames && { profileFirstNames, profileLastNames }),
   }
 
   return { events, profileIds, profileEmails, jobSummary, examplesByEventName }

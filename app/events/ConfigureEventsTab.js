@@ -5,6 +5,7 @@ import { EVENT_DEFINITIONS } from '@/src/lib/events/eventDefinitions'
 import { buildSampleEventProperties } from '@/src/lib/events/eventPropertiesSchema'
 import { getCatalogItemsFromBusinessType, getBusinessTypeById, getRelevantBusinessTypeIdsForEvent } from '@/src/catalog/businessTypes'
 import { samplePropertiesToKlaviyoEventPayload } from '@/lib/klaviyoPayloads'
+import ColorizedJson from '@/components/ColorizedJson'
 
 export default function ConfigureEventsTab() {
   const [eventName, setEventName] = useState(EVENT_DEFINITIONS[0]?.name ?? '')
@@ -47,6 +48,10 @@ export default function ConfigureEventsTab() {
 
   return (
     <div className="space-y-4">
+      <h2 className="text-lg font-semibold text-gray-900">Preview</h2>
+      <p className="text-sm text-gray-600">
+        Select an event and optional business type to view the Klaviyo API request body. The payload uses template product, service, or subscription data from the selected business type.
+      </p>
       <div className="flex flex-wrap items-center gap-3">
         <div>
           <label className="block text-xs text-gray-500 mb-1">Event</label>
@@ -74,18 +79,14 @@ export default function ConfigureEventsTab() {
           </select>
         </div>
       </div>
-      <p className="text-xs text-gray-500">
-        Select an event and optional business type to view the Klaviyo API request body that would be sent for this event.
-      </p>
-
-      <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-        <h3 className="text-sm font-semibold text-gray-900 mb-2">Klaviyo API request body</h3>
-        <p className="text-xs text-gray-500 mb-3">
+      <div className="rounded-lg border border-gray-700 bg-gray-900 overflow-hidden">
+        <h3 className="text-sm font-semibold text-gray-100 px-4 pt-4 pb-2">Klaviyo API request body</h3>
+        <p className="text-xs text-gray-400 px-4 pb-3">
           {eventName}
           {businessTypeId ? ` · ${getBusinessTypeById(businessTypeId)?.label ?? businessTypeId}` : ''}
         </p>
-        <pre className="text-xs text-gray-700 bg-white rounded border border-gray-200 p-4 overflow-auto max-h-[min(70vh,600px)]">
-          {JSON.stringify(klaviyoPayload, null, 2)}
+        <pre className="text-xs text-gray-100 rounded-b-lg p-4 overflow-auto max-h-[min(70vh,600px)] font-mono border-t border-gray-700">
+          <ColorizedJson jsonString={JSON.stringify(klaviyoPayload, null, 2)} />
         </pre>
       </div>
     </div>

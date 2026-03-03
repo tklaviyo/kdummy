@@ -18,6 +18,7 @@ import { getTemplate } from '@/src/catalog/schema'
 import { apiClient } from '@/lib/apiClient'
 import { getActiveApiKey } from '@/lib/storage'
 import ConfigureEventsTab from '@/app/events/ConfigureEventsTab'
+import ColorizedJson from '@/components/ColorizedJson'
 
 const DATA_SOURCE_CATALOG = 'catalog'
 const DATA_SOURCE_INDUSTRY = 'industry'
@@ -116,9 +117,10 @@ export default function EventsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const tabParam = searchParams.get('tab')
-  const eventsTab = tabParam === 'jobs' || tabParam === 'configure' || tabParam === 'generate' ? tabParam : 'generate'
+  const resolvedTab = tabParam === 'configure' ? 'preview' : tabParam
+  const eventsTab = resolvedTab === 'jobs' || resolvedTab === 'preview' || resolvedTab === 'generate' ? resolvedTab : 'generate'
   const setEventsTab = useCallback((tab) => {
-    router.replace(`/events?tab=${tab}`)
+    router.replace(`/events?tab=${tab === 'configure' ? 'preview' : tab}`)
   }, [router])
   const [generateStep, setGenerateStep] = useState('setup') // 'setup' | 'confirm'
   const [showReviewModal, setShowReviewModal] = useState(false)
@@ -441,7 +443,9 @@ export default function EventsPage() {
     const profileSummaries = result.jobSummary.profileIds.map((id, i) => {
       const email = result.jobSummary.profileEmails[i]
       const attrs = profileMode === 'selected' ? availableProfiles.find((p) => p.id === id)?.attributes : null
-      return { id, email, firstName: attrs?.first_name ?? null, lastName: attrs?.last_name ?? null }
+      const firstName = attrs?.first_name ?? result.jobSummary.profileFirstNames?.[i] ?? null
+      const lastName = attrs?.last_name ?? result.jobSummary.profileLastNames?.[i] ?? null
+      return { id, email, firstName, lastName }
     })
     const jobRecord = {
       id: `run_${Date.now()}`,
@@ -584,39 +588,47 @@ export default function EventsPage() {
             <p className="mt-2 text-sm text-gray-600">
               Generate events from journey wizards or configure default and custom event properties.
             </p>
-            <div className="mt-4 flex gap-2 border-b border-gray-200">
-              <button
-                type="button"
-                onClick={() => setEventsTab('generate')}
-                className={`py-2 px-3 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                  eventsTab === 'generate' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Generate
-              </button>
-              <button
-                type="button"
-                onClick={() => setEventsTab('configure')}
-                className={`py-2 px-3 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                  eventsTab === 'configure' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Configure
-              </button>
-              <button
-                type="button"
-                onClick={() => setEventsTab('jobs')}
-                className={`py-2 px-3 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                  eventsTab === 'jobs' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Jobs
-                {runHistory.length > 0 && (
-                  <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-700">
-                    {runHistory.length}
-                  </span>
-                )}
-              </button>
+            <div className="border-b border-gray-200 mt-6">
+              <nav className="-mb-px flex space-x-8">
+                <button
+                  type="button"
+                  onClick={() => setEventsTab('generate')}
+                  className={`${
+                    eventsTab === 'generate'
+                      ? 'border-indigo-500 text-indigo-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                >
+                  Generate
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEventsTab('preview')}
+                  className={`${
+                    eventsTab === 'preview'
+                      ? 'border-indigo-500 text-indigo-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                >
+                  Preview
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEventsTab('jobs')}
+                  className={`${
+                    eventsTab === 'jobs'
+                      ? 'border-indigo-500 text-indigo-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                >
+                  Jobs
+                  {runHistory.length > 0 && (
+                    <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-700">
+                      {runHistory.length}
+                    </span>
+                  )}
+                </button>
+              </nav>
             </div>
           </div>
 
@@ -700,7 +712,7 @@ export default function EventsPage() {
             </div>
           )}
 
-          {eventsTab === 'configure' && (
+          {eventsTab === 'preview' && (
             <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-6">
               <ConfigureEventsTab />
             </div>
@@ -798,7 +810,7 @@ export default function EventsPage() {
                   Event Data
                 </h2>
                 <p className="text-sm text-gray-500 mt-1 ml-11">
-                  Choose where item data comes from, then which items to use in generated events. You can <button type="button" onClick={() => setEventsTab('configure')} className="text-indigo-600 hover:text-indigo-800 font-medium">configure event properties</button> in the other tab.
+                  Choose where item data comes from, then which items to use in generated events. You can <button type="button" onClick={() => setEventsTab('preview')} className="text-indigo-600 hover:text-indigo-800 font-medium">preview event payloads</button> in the other tab.
                 </p>
               </div>
               <div className="p-6 space-y-6">
@@ -822,7 +834,7 @@ export default function EventsPage() {
                           className={`rounded-xl border-2 p-4 text-left transition-colors flex flex-col min-h-[152px] cursor-pointer ${(needsProducts && dataSourceProducts === DATA_SOURCE_INDUSTRY) || (needsServices && dataSourceServices === DATA_SOURCE_INDUSTRY) || (needsSubscriptions && dataSourceSubscriptions === DATA_SOURCE_INDUSTRY) ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'}`}
                         >
                           <div className="w-full text-left flex-1 min-h-0">
-                            <span className="block font-medium text-gray-900">Default template</span>
+                            <span className="block font-medium text-gray-900">Template Items</span>
                             <span className="block text-xs text-gray-500 mt-1">Use sample items from an industry template (no catalog setup needed)</span>
                           </div>
                           <div
@@ -864,7 +876,7 @@ export default function EventsPage() {
                           className={`rounded-xl border-2 p-4 text-left transition-colors flex flex-col min-h-[152px] cursor-pointer ${(needsProducts && dataSourceProducts === DATA_SOURCE_CATALOG) || (needsServices && dataSourceServices === DATA_SOURCE_CATALOG) || (needsSubscriptions && dataSourceSubscriptions === DATA_SOURCE_CATALOG) ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'}`}
                         >
                           <div className="w-full text-left flex-1 min-h-0">
-                            <span className="block font-medium text-gray-900">Data Catalog</span>
+                            <span className="block font-medium text-gray-900">Custom Items</span>
                             <span className="block text-xs text-gray-500 mt-1">Use items you’ve added in the <Link href="/catalog" className="text-indigo-600 hover:text-indigo-800" onClick={(e) => e.stopPropagation()}>Data Catalog</Link></span>
                           </div>
                           <div className="mt-3 flex-shrink-0 flex items-center gap-3 min-h-[38px] flex-wrap">
@@ -924,7 +936,7 @@ export default function EventsPage() {
                               if (items.length === 0) {
                                 return (
                                   <p className="p-4 text-sm text-gray-500">
-                                    Add items in <Link href="/catalog" className="text-indigo-600 hover:text-indigo-800">Data Catalog</Link> or choose Default template and a template on the left.
+                                    Add items in <Link href="/catalog" className="text-indigo-600 hover:text-indigo-800">Data Catalog</Link> or choose Template Items and a template on the left.
                                   </p>
                                 )
                               }
@@ -1000,7 +1012,7 @@ export default function EventsPage() {
                                 className={`rounded-xl border-2 p-4 text-left transition-colors flex flex-col min-h-[152px] cursor-pointer ${locationDataSource === 'default' ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'}`}
                               >
                                 <div className="w-full text-left flex-1 min-h-0">
-                                  <span className="block font-medium text-gray-900">Default</span>
+                                  <span className="block font-medium text-gray-900">Template locations</span>
                                   <span className="block text-xs text-gray-500 mt-1">Use 5 generic locations (Location 1–5). No catalog setup needed.</span>
                                 </div>
                               </div>
@@ -1012,7 +1024,7 @@ export default function EventsPage() {
                                 className={`rounded-xl border-2 p-4 text-left transition-colors flex flex-col min-h-[152px] cursor-pointer ${locationDataSource === 'catalog' ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'}`}
                               >
                                 <div className="w-full text-left flex-1 min-h-0">
-                                  <span className="block font-medium text-gray-900">Data Catalog</span>
+                                  <span className="block font-medium text-gray-900">Custom Locations</span>
                                   <span className="block text-xs text-gray-500 mt-1">Use locations you’ve added in the <Link href="/catalog?tab=locations" className="text-indigo-600 hover:text-indigo-800" onClick={(e) => e.stopPropagation()}>Data Catalog</Link></span>
                                 </div>
                                 <div className="mt-3 flex-shrink-0 flex items-center gap-3 min-h-[38px] flex-wrap">
@@ -1044,7 +1056,7 @@ export default function EventsPage() {
                                 {locationDataSource === 'default'
                                   ? `${defaultLocationsSelectedCount} of ${defaultLocationsTotal} selected`
                                   : allCustomLocations.length === 0
-                                    ? 'Select Data Catalog and add locations on the left.'
+                                    ? 'Select Custom Locations and add locations on the left.'
                                     : `${selectedLocationIds.length} of ${allCustomLocations.length} selected`}
                               </span>
                               {locationDataSource === 'catalog' && allCustomLocations.length > 0 && (
@@ -1087,7 +1099,7 @@ export default function EventsPage() {
                                 </table>
                               ) : allCustomLocations.length === 0 ? (
                                 <p className="p-4 text-sm text-gray-500">
-                                  Add locations in <Link href="/catalog?tab=locations" className="text-indigo-600 hover:text-indigo-800">Data Catalog</Link> or choose Default on the left.
+                                  Add locations in <Link href="/catalog?tab=locations" className="text-indigo-600 hover:text-indigo-800">Data Catalog</Link> or choose Template locations on the left.
                                 </p>
                               ) : (
                                 <table className="w-full text-sm">
@@ -1186,7 +1198,7 @@ export default function EventsPage() {
                   {journey?.timingProfile === 'booking_spaced' && (
                     <div className="rounded-lg border border-gray-200 bg-gray-50/30 p-4">
                       <label className="block text-sm font-semibold text-gray-900 mb-2">Booking session (days after create)</label>
-                      <p className="text-xs text-gray-500 mb-3">How many days after the booking is created the appointment or stay takes place. Events are dated within your timestamp range; each journey picks a random value between min and max for variety.</p>
+                      <p className="text-xs text-gray-500 mb-3">How many days after the booking is created the booking actually takes place.</p>
                       <div className="flex items-center gap-3 flex-wrap">
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-gray-600">Min</span>
@@ -1302,8 +1314,7 @@ export default function EventsPage() {
                         }`}
                       >
                         <div className="w-full text-left flex-1 min-h-0 flex flex-col items-start">
-                          <span className="block text-sm font-semibold text-gray-900">Generate random profiles</span>
-                          <p className="text-xs text-gray-500 mt-1">Simulated profiles for this run only.</p>
+                          <span className="block text-sm font-semibold text-gray-900">Create new profiles</span>
                         </div>
                         {profileMode === 'auto' && (
                           <div className="mt-3 flex-shrink-0 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
@@ -1349,7 +1360,6 @@ export default function EventsPage() {
                         }`}
                       >
                         <span className="block text-sm font-semibold text-gray-900">Use existing profiles</span>
-                        <p className="text-xs text-gray-500 mt-1">Select from your Klaviyo account.</p>
                       </button>
                     </div>
                   </div>
@@ -1487,9 +1497,9 @@ export default function EventsPage() {
               <div className="fixed inset-0 z-50 overflow-y-auto">
                 <div className="fixed inset-0 bg-gray-500/75 transition-opacity" aria-hidden="true" onClick={() => setShowReviewModal(false)} />
                 <div className="flex min-h-full items-center justify-center p-4">
-                  <div className="relative w-full max-w-4xl rounded-xl border border-gray-200 bg-white shadow-xl flex flex-col max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+                  <div className="relative w-full max-w-5xl rounded-xl border border-gray-200 bg-white shadow-xl flex flex-col max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
                     <div className="bg-gradient-to-r from-indigo-50 to-white px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-wrap gap-4 shrink-0">
-                      <h2 className="text-lg font-semibold text-gray-900">Review & run</h2>
+                      <h2 className="text-lg font-semibold text-gray-900">Review</h2>
                       <button
                         type="button"
                         onClick={() => setShowReviewModal(false)}
@@ -1502,113 +1512,110 @@ export default function EventsPage() {
                       </button>
                     </div>
                     <div className="p-6 flex flex-col gap-4 overflow-y-auto min-h-0 flex-1">
-                      {/* Summary — compact header style matching Preview */}
-                      <div className="flex flex-col rounded-xl border border-gray-200 overflow-hidden bg-white shadow-sm shrink-0">
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50/50">
-                          <span className="text-sm font-semibold text-gray-900">Summary</span>
+                      {/* Summary (1/4) + Preview (3/4) side by side */}
+                      <div className="flex gap-4 min-h-0 flex-1">
+                        {/* Summary — 1/4 width, items on own row */}
+                        <div className="w-1/4 min-w-0 flex flex-col rounded-xl border border-gray-200 overflow-hidden bg-white shadow-sm shrink-0">
+                          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50/50">
+                            <span className="text-sm font-semibold text-gray-900">Summary</span>
+                          </div>
+                          <div className="px-4 py-3">
+                            <p className="text-sm font-medium text-gray-900">{journey.name}</p>
+                            <ul className="mt-1.5 text-xs text-gray-600 flex flex-col gap-y-1">
+                              <li><span className="text-gray-500">Journeys per profile:</span> {journeyCountNum}</li>
+                              <li><span className="text-gray-500">Total runs:</span> {profileMode === 'auto' ? profilesCountNum * journeyCountNum : selectedProfileIds.length * journeyCountNum}</li>
+                              <li><span className="text-gray-500">Data:</span> {(needsProducts && dataSourceProducts === DATA_SOURCE_CATALOG) || (needsServices && dataSourceServices === DATA_SOURCE_CATALOG) || (needsSubscriptions && dataSourceSubscriptions === DATA_SOURCE_CATALOG) ? 'Catalog' : `Template${(needsProducts ? industryProducts : needsServices ? industryServices : industrySubscriptions) ? ` · ${getBusinessTypeById(needsProducts ? industryProducts : needsServices ? industryServices : industrySubscriptions)?.label ?? ''}` : ''}`}</li>
+                              <li><span className="text-gray-500">Profiles:</span> {profileMode === 'auto' ? `${profilesCountNum} random` : `${selectedProfileIds.length} selected`}</li>
+                              <li><span className="text-gray-500">Dates:</span> {DATE_RANGE_OPTIONS.find((o) => o.value === dateRange)?.label ?? dateRange}</li>
+                              {needsProducts && <li><span className="text-gray-500">Items/order:</span> {productsPerOrderMinNum}–{productsPerOrderMaxNum}</li>}
+                            </ul>
+                            <p className="mt-1.5 text-xs text-gray-500">Events use <code className="bg-gray-100 px-1 rounded">(KD)</code> metric suffix.</p>
+                          </div>
                         </div>
-                        <div className="px-4 py-3">
-                          <p className="text-sm font-medium text-gray-900">{journey.name}</p>
-                          <ul className="mt-1.5 text-xs text-gray-600 flex flex-wrap gap-x-4 gap-y-0.5">
-                            <li><span className="text-gray-500">Journeys per profile:</span> {journeyCountNum}</li>
-                            <li><span className="text-gray-500">Total runs:</span> {profileMode === 'auto' ? profilesCountNum * journeyCountNum : selectedProfileIds.length * journeyCountNum}</li>
-                            <li><span className="text-gray-500">Data:</span> {(needsProducts && dataSourceProducts === DATA_SOURCE_CATALOG) || (needsServices && dataSourceServices === DATA_SOURCE_CATALOG) || (needsSubscriptions && dataSourceSubscriptions === DATA_SOURCE_CATALOG) ? 'Catalog' : `Template${(needsProducts ? industryProducts : needsServices ? industryServices : industrySubscriptions) ? ` · ${getBusinessTypeById(needsProducts ? industryProducts : needsServices ? industryServices : industrySubscriptions)?.label ?? ''}` : ''}`}</li>
-                            <li><span className="text-gray-500">Profiles:</span> {profileMode === 'auto' ? `${profilesCountNum} random` : `${selectedProfileIds.length} selected`}</li>
-                            <li><span className="text-gray-500">Dates:</span> {DATE_RANGE_OPTIONS.find((o) => o.value === dateRange)?.label ?? dateRange}</li>
-                            {needsProducts && <li><span className="text-gray-500">Items/order:</span> {productsPerOrderMinNum}–{productsPerOrderMaxNum}</li>}
-                          </ul>
-                          <p className="mt-1.5 text-xs text-gray-500">Events are sent to Klaviyo with <code className="bg-gray-100 px-1 rounded">(KD)</code> metric suffix.</p>
+
+                        {/* Preview — 3/4 width */}
+                        <div className="w-3/4 min-w-0 flex flex-col rounded-xl border border-gray-200 overflow-hidden bg-white shadow-sm min-h-0">
+                          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50/50 flex-wrap gap-2">
+                            <span className="text-sm font-semibold text-gray-900">Preview</span>
+                            <div className="flex items-center gap-2">
+                              {previewEventName && previewExamplesByEvent[previewEventName] && (
+                                <span className="text-xs text-gray-500">
+                                  Example {previewExampleIndex + 1} of {previewExamplesByEvent[previewEventName].length}
+                                </span>
+                              )}
+                              {previewEventName && previewExamplesByEvent[previewEventName] && previewExamplesByEvent[previewEventName].length > 1 && (
+                                <div className="flex gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewExampleIndex((i) => Math.max(0, i - 1))}
+                                    disabled={previewExampleIndex <= 0}
+                                    className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                                  >
+                                    ← Prev
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewExampleIndex((i) => Math.min((previewExamplesByEvent[previewEventName]?.length ?? 1) - 1, i + 1))}
+                                    disabled={previewExampleIndex >= (previewExamplesByEvent[previewEventName]?.length ?? 1) - 1}
+                                    className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                                  >
+                                    Next →
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex flex-1 min-h-0 flex-col sm:flex-row">
+                            <nav className="sm:w-52 border-b sm:border-b-0 sm:border-r border-gray-200 bg-gray-50/30 flex sm:flex-col overflow-x-auto shrink-0">
+                              {selectedEventNames.map((name) => (
+                                <button
+                                  key={name}
+                                  type="button"
+                                  onClick={() => { setPreviewEventName(name); setPreviewExampleIndex(0) }}
+                                  className={`px-4 py-3 text-left text-sm font-medium whitespace-nowrap border-b sm:border-b-0 sm:border-r border-gray-200 last:border-0 transition-colors ${previewEventName === name ? 'bg-white text-indigo-700 border-indigo-500 sm:border-r-indigo-500 shadow-sm' : 'text-gray-600 hover:bg-white hover:text-gray-900'}`}
+                                >
+                                  {name}
+                                </button>
+                              ))}
+                            </nav>
+                            <div className="flex-1 flex flex-col min-h-0 p-4 sm:p-6 bg-white">
+                              {previewEventName && previewExamplesByEvent[previewEventName] && (
+                                (() => {
+                                  const examples = previewExamplesByEvent[previewEventName]
+                                  const sampleProperties = examples[previewExampleIndex] ?? examples[0]
+                                  const klaviyoPayload = samplePropertiesToKlaviyoEventPayload(sampleProperties, previewEventName)
+                                  return (
+                                    <>
+                                      <p className="text-xs text-gray-500 mb-2">{previewEventName} — example {previewExampleIndex + 1} of {examples.length} (Klaviyo API request body)</p>
+                                      <pre className="flex-1 text-xs rounded-lg p-4 overflow-auto border border-gray-700 font-mono min-h-[280px] bg-gray-900 text-gray-100" style={{ maxHeight: 'min(520px, 55vh)' }}>
+                                        <ColorizedJson jsonString={JSON.stringify(klaviyoPayload, null, 2)} />
+                                      </pre>
+                                    </>
+                                  )
+                                })()
+                              )}
+                            </div>
+                          </div>
                         </div>
                       </div>
 
-                      {/* Payload preview section */}
-                      <div className="flex flex-col rounded-xl border border-gray-200 overflow-hidden bg-white shadow-sm min-h-0 flex-1">
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50/50 flex-wrap gap-2">
-                          <span className="text-sm font-semibold text-gray-900">Preview</span>
-                          <div className="flex items-center gap-2">
-                            {previewEventName && previewExamplesByEvent[previewEventName] && (
-                              <span className="text-xs text-gray-500">
-                                Example {previewExampleIndex + 1} of {previewExamplesByEvent[previewEventName].length}
-                              </span>
-                            )}
-                            {previewEventName && previewExamplesByEvent[previewEventName] && previewExamplesByEvent[previewEventName].length > 1 && (
-                              <div className="flex gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => setPreviewExampleIndex((i) => Math.max(0, i - 1))}
-                                  disabled={previewExampleIndex <= 0}
-                                  className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                                >
-                                  ← Prev
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setPreviewExampleIndex((i) => Math.min((previewExamplesByEvent[previewEventName]?.length ?? 1) - 1, i + 1))}
-                                  disabled={previewExampleIndex >= (previewExamplesByEvent[previewEventName]?.length ?? 1) - 1}
-                                  className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                                >
-                                  Next →
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex flex-1 min-h-0 flex-col sm:flex-row">
-                          <nav className="sm:w-52 border-b sm:border-b-0 sm:border-r border-gray-200 bg-gray-50/30 flex sm:flex-col overflow-x-auto shrink-0">
-                            {selectedEventNames.map((name) => (
-                              <button
-                                key={name}
-                                type="button"
-                                onClick={() => { setPreviewEventName(name); setPreviewExampleIndex(0) }}
-                                className={`px-4 py-3 text-left text-sm font-medium whitespace-nowrap border-b sm:border-b-0 sm:border-r border-gray-200 last:border-0 transition-colors ${previewEventName === name ? 'bg-white text-indigo-700 border-indigo-500 sm:border-r-indigo-500 shadow-sm' : 'text-gray-600 hover:bg-white hover:text-gray-900'}`}
-                              >
-                                {name}
-                              </button>
-                            ))}
-                          </nav>
-                          <div className="flex-1 flex flex-col min-h-0 p-4 sm:p-6 bg-white">
-                            {previewEventName && previewExamplesByEvent[previewEventName] && (
-                              (() => {
-                                const examples = previewExamplesByEvent[previewEventName]
-                                const sampleProperties = examples[previewExampleIndex] ?? examples[0]
-                                const klaviyoPayload = samplePropertiesToKlaviyoEventPayload(sampleProperties, previewEventName)
-                                return (
-                                  <>
-                                    <p className="text-xs text-gray-500 mb-2">{previewEventName} — example {previewExampleIndex + 1} of {examples.length} (Klaviyo API request body)</p>
-                                    <pre className="flex-1 text-xs text-gray-800 bg-gray-50 rounded-lg p-4 overflow-auto border border-gray-100 font-mono min-h-[280px]" style={{ maxHeight: 'min(520px, 55vh)' }}>
-                                      {JSON.stringify(klaviyoPayload, null, 2)}
-                                    </pre>
-                                  </>
-                                )
-                              })()
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Generate events + Cancel at bottom */}
-                      <div className="rounded-xl border-2 border-indigo-200 bg-indigo-50/50 p-6 flex flex-wrap items-center justify-between gap-4 shrink-0">
-                        <div>
-                          <p className="text-sm font-semibold text-gray-900">Ready to generate</p>
-                          <p className="text-xs text-gray-600 mt-0.5">Events will be sent to Klaviyo (metric name suffix <code className="bg-white/80 px-1 rounded">(KD)</code>) and saved to run history for review.</p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={() => setShowReviewModal(false)}
-                            className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="button"
-                            onClick={async () => { await handleGenerate(); setShowReviewModal(false); setEventsTab('jobs') }}
-                            disabled={selectedEventNames.length === 0 || !hasEnoughData || sendingToKlaviyo}
-                            className="inline-flex items-center rounded-lg bg-indigo-600 px-6 py-3 text-base font-semibold text-white shadow-md hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {sendingToKlaviyo ? 'Sending to Klaviyo…' : 'Generate events'}
-                          </button>
-                        </div>
+                      {/* Generate + Cancel — subtle, no outline */}
+                      <div className="flex items-center justify-end gap-3 pt-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setShowReviewModal(false)}
+                          className="text-sm font-medium text-gray-600 hover:text-gray-900"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => { await handleGenerate(); setShowReviewModal(false); setEventsTab('jobs') }}
+                          disabled={selectedEventNames.length === 0 || !hasEnoughData || sendingToKlaviyo}
+                          className="inline-flex items-center rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {sendingToKlaviyo ? 'Sending to Klaviyo…' : 'Generate events'}
+                        </button>
                       </div>
                     </div>
                   </div>

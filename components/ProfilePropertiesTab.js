@@ -5,13 +5,24 @@ import { getActiveApiKey } from '@/lib/storage'
 import { useConfirm } from '@/context/ConfirmContext'
 import { groupProperties, PROFILE_PROPERTY_GROUPS, getPropertyGroupId } from '@/lib/profilePropertyGroups'
 
-const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onPropertiesChange, headerRenderedByParent = false }, ref) {
+const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab(
+  {
+    onPropertiesChange,
+    headerRenderedByParent = false,
+    initialAction,
+    initialPropertyName,
+    embeddedForGenerate = false,
+    configureHeader = null,
+  },
+  ref
+) {
   const { alert, confirm } = useConfirm()
   const [properties, setProperties] = useState([])
   const [loading, setLoading] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingProperty, setEditingProperty] = useState(null)
   const [activeGroupId, setActiveGroupId] = useState('all')
+  const [initialHandled, setInitialHandled] = useState(false)
   
   // Form state
   const [formData, setFormData] = useState({
@@ -241,34 +252,77 @@ const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onProper
     }
   }
 
+  const handleSelectAll = async () => {
+    const allEnabled = properties.every((p) => p.enabled !== false)
+    const newEnabled = !allEnabled
+    try {
+      for (const p of properties) {
+        await fetchWithApiKey(`/api/profile-properties?name=${encodeURIComponent(p.name)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ data: { enabled: newEnabled } }),
+        })
+      }
+      fetchProperties()
+      if (onPropertiesChange) onPropertiesChange()
+    } catch (error) {
+      await alert(`Error: ${error.message}`)
+    }
+  }
+
   const isDefaultProperty = (property) => {
-    const defaultNames = ['gender', 'birthday', 'marketing_preferences', 'loyalty_member', 'loyalty_tier', 'signup_date']
+    const defaultNames = ['gender', 'birthday', 'marketing_preferences', 'loyalty_number', 'loyalty_tier', 'signup_date']
     return defaultNames.includes(property.original_name || property.name)
   }
 
-  useImperativeHandle(ref, () => ({
-    openAddModal: () => {
+  useImperativeHandle(
+    ref,
+    () => ({
+      openAddModal: () => {
+        handleAdd()
+      },
+      openEditModal: (propertyName) => {
+        if (!propertyName) return
+        const prop = properties.find(
+          (p) =>
+            (p.original_name || p.name) === propertyName ||
+            p.name === propertyName
+        )
+        if (prop) {
+          handleEdit(prop)
+        }
+      },
+      refreshProperties: () => {
+        fetchProperties()
+      },
+    }),
+    [properties]
+  )
+
+  // When navigated from Generate tab with an initial action, open the appropriate modal once.
+  useEffect(() => {
+    if (initialHandled) return
+    if (!initialAction) return
+
+    if (initialAction === 'add') {
       handleAdd()
-    },
-  }), [])
+      setInitialHandled(true)
+      return
+    }
+    if (initialAction === 'edit' && initialPropertyName && properties.length > 0) {
+      const prop = properties.find((p) => (p.original_name || p.name) === initialPropertyName || p.name === initialPropertyName)
+      if (prop) {
+        handleEdit(prop)
+        setInitialHandled(true)
+      }
+    }
+  }, [initialAction, initialPropertyName, properties, initialHandled])
 
   return (
     <div>
-      {!headerRenderedByParent && (
-        <div className="mb-6 flex justify-end">
-          <button
-            onClick={handleAdd}
-            className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition-colors"
-          >
-            Add Property
-          </button>
-        </div>
-      )}
-
-      {/* Add/Edit Modal */}
+      {/* Add/Edit Modal (always available, even when list is hidden for Generate tab) */}
       {showAddModal && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white max-h-[90vh] overflow-y-auto">
+          <div className="relative top-20 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white max-h-[90vh] overflow-y-auto">
             <div className="mt-3">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-medium text-gray-900">
@@ -646,9 +700,23 @@ const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onProper
         </div>
       )}
 
-      {/* Properties List - 1/3 sidebar + 1/3 + 1/3 card columns (no container border, like Generate) */}
-      <div>
-        {loading ? (
+      {/* Properties List - wrapped in card when configureHeader provided */}
+      <div className={embeddedForGenerate ? 'hidden' : ''}>
+        {configureHeader ? (
+          <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+            <div className="bg-gradient-to-r from-indigo-50 to-white px-6 py-4 border-b border-gray-200">
+              {configureHeader}
+            </div>
+            <div className="p-6">
+              <div className="flex flex-wrap justify-end mb-4">
+                <button
+                  onClick={handleAdd}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition-colors text-sm font-medium"
+                >
+                  Add property
+                </button>
+              </div>
+              {loading ? (
           <div className="p-8 text-center text-gray-500">Loading...</div>
         ) : properties.length === 0 ? (
           <div className="p-8 text-center text-gray-500">
@@ -665,10 +733,40 @@ const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onProper
             const isDefault = isDefaultProperty(property)
             const nameChanged = property.original_name && property.name !== property.original_name
             const isEnabled = property.enabled !== false
+            const hasDefaultValue = property.default_value != null && property.default_value !== ''
+            const dateRangePresetLabels = {
+              last_3_months: 'Last 3 months',
+              last_6_months: 'Last 6 months',
+              last_12_months: 'Last 12 months',
+              last_24_months: 'Last 24 months',
+              custom: 'Custom range',
+            }
+            const dateConfig =
+              property.type === 'date' &&
+              (property.date_range_preset || property.date_min || property.date_max)
+                ? property.date_range_preset === 'custom' && (property.date_min || property.date_max)
+                  ? `${property.date_min || '…'} to ${property.date_max || '…'}`
+                  : dateRangePresetLabels[property.date_range_preset] || property.date_range_preset || 'Custom'
+                : null
+            const integerConfig =
+              (property.type === 'integer' || property.type === 'decimal') &&
+              (property.integer_min != null || property.integer_max != null)
+                ? `${property.integer_min ?? '—'} to ${property.integer_max ?? '—'}`
+                : null
+            const arraySizeConfig =
+              property.type === 'array' &&
+              (property.array_min_items != null || property.array_max_items != null)
+                ? `${property.array_min_items ?? 0}–${property.array_max_items ?? '?'} items`
+                : null
+            const optionsConfig =
+              property.options && Array.isArray(property.options) && property.options.length > 0
+                ? property.options.join(', ')
+                : null
+
             return (
               <div
                 key={property.name}
-                className="border border-gray-200 rounded-lg p-4"
+                className="border border-gray-200 rounded-lg p-4 min-h-[120px] flex flex-col"
               >
                 <div className="flex items-start justify-between gap-2 mb-2">
                   <div className="min-w-0 flex-1">
@@ -679,7 +777,6 @@ const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onProper
                     <div className="flex flex-wrap gap-1.5 mt-1.5">
                       {isDefault && <span className="px-1.5 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-800 rounded">Default</span>}
                       {nameChanged && <span className="px-1.5 py-0.5 text-xs font-medium bg-orange-100 text-orange-800 rounded">Renamed from: {property.original_name}</span>}
-                      <span className="px-1.5 py-0.5 text-xs font-medium text-gray-500 bg-gray-100 rounded">Static</span>
                     </div>
                   </div>
                   <button
@@ -691,11 +788,30 @@ const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onProper
                     role="switch"
                     aria-checked={isEnabled}
                   >
-                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${isEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        isEnabled ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
                   </button>
                 </div>
                 <dl className="space-y-1 text-xs">
                   <div><dt className="inline font-medium text-gray-500">Description: </dt><dd className="inline text-gray-700">{property.description || '—'}</dd></div>
+                  {hasDefaultValue && (
+                    <div><dt className="inline font-medium text-gray-500">Default value: </dt><dd className="inline text-gray-700">{String(property.default_value)}</dd></div>
+                  )}
+                  {dateConfig && (
+                    <div><dt className="inline font-medium text-gray-500">Date range: </dt><dd className="inline text-gray-700">{dateConfig}</dd></div>
+                  )}
+                  {integerConfig != null && (
+                    <div><dt className="inline font-medium text-gray-500">Range: </dt><dd className="inline text-gray-700">{integerConfig}</dd></div>
+                  )}
+                  {arraySizeConfig && (
+                    <div><dt className="inline font-medium text-gray-500">Array size: </dt><dd className="inline text-gray-700">{arraySizeConfig}</dd></div>
+                  )}
+                  {optionsConfig && (
+                    <div><dt className="inline font-medium text-gray-500">Options: </dt><dd className="inline text-gray-700">{optionsConfig}</dd></div>
+                  )}
                 </dl>
                 <div className="mt-3 pt-3 border-t border-gray-200 flex flex-wrap gap-2 justify-end">
                   <button onClick={() => handleEdit(property)} className="text-xs font-medium text-indigo-600 hover:text-indigo-900">Edit</button>
@@ -706,40 +822,42 @@ const ProfilePropertiesTab = forwardRef(function ProfilePropertiesTab({ onProper
             )
           }
           return (
-            <div className="grid grid-cols-1 md:grid-cols-[1fr_2fr_2fr] gap-0 min-h-0">
-              <aside className="md:min-w-0 border-b md:border-b-0 md:border-r border-gray-200 flex-shrink-0 p-2">
-                <nav className="flex md:flex-col gap-0 overflow-x-auto md:overflow-x-visible md:overflow-y-auto" aria-label="Property categories">
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                <select
+                  value={activeGroupId}
+                  onChange={(e) => setActiveGroupId(e.target.value)}
+                  aria-label="Property category"
+                  className="block w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                >
                   {navItems.map(({ id, label }) => (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => setActiveGroupId(id)}
-                      className={`w-full text-left py-2.5 px-3 rounded-md text-sm font-medium whitespace-nowrap ${
-                        activeGroupId === id
-                          ? 'bg-indigo-100 text-indigo-700'
-                          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                      }`}
-                    >
-                      {label}
-                    </button>
+                    <option key={id} value={id}>{label}</option>
                   ))}
-                </nav>
-              </aside>
-              <div className="min-w-0 p-2 overflow-auto space-y-4">
-                {currentProps.length === 0 ? (
-                  <p className="text-sm text-gray-500 py-4">No properties in this category.</p>
-                ) : (
+                </select>
+                {properties.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleSelectAll}
+                    className="text-sm font-medium text-indigo-600 hover:text-indigo-800 shrink-0"
+                  >
+                    {properties.every((p) => p.enabled !== false) ? 'Deselect all' : 'Select all'}
+                  </button>
+                )}
+              </div>
+              {currentProps.length === 0 ? (
+                <p className="text-sm text-gray-500 py-4">No properties in this category.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-4">{leftProps.map(renderCard)}</div>
-                )}
-              </div>
-              <div className="min-w-0 p-2 overflow-auto space-y-4">
-                {currentProps.length === 0 ? null : (
                   <div className="space-y-4">{rightProps.map(renderCard)}</div>
-                )}
-              </div>
-            </div>
+                </div>
+              )}
+            </>
           )
         })()}
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   )

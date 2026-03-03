@@ -38,7 +38,7 @@ export default function ProfilesPage() {
 
   const fetchPropertiesCount = async () => {
     try {
-      const response = await fetch('/api/profile-properties?include_custom=true')
+      const response = await fetchWithApiKey('/api/profile-properties?include_custom=true')
       const data = await response.json()
       setPropertiesCount((data.data || []).length)
     } catch (error) {
@@ -176,8 +176,8 @@ export default function ProfilesPage() {
 
           {/* Tab Content */}
           {tab === 'list' && (
-            <div>
-              <div className="mb-6 flex justify-between items-center">
+            <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+              <div className="bg-gradient-to-r from-indigo-50 to-white px-6 py-4 border-b border-gray-200 flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <h2 className="text-xl font-semibold text-gray-900">Generated Profiles</h2>
                   <p className="mt-1 text-sm text-gray-600">
@@ -193,7 +193,7 @@ export default function ProfilesPage() {
               </div>
 
               {/* Profiles List */}
-              <div className="bg-white shadow rounded-lg overflow-hidden">
+              <div className="border-t border-gray-200">
                 <div className="px-6 py-4 border-b border-gray-200 flex flex-wrap items-center justify-between gap-3">
                   <h3 className="text-lg font-semibold text-gray-900">
                     Profiles ({profiles.length})
@@ -309,29 +309,32 @@ export default function ProfilesPage() {
             </div>
           )}
 
-          {tab === 'configure' && (
-            <div>
-              <div className="mb-6 flex justify-between items-center">
-                <div>
-                  <h2 className="text-xl font-semibold text-gray-900">Configure Properties ({propertiesCount})</h2>
-                  <p className="mt-1 text-sm text-gray-600">
-                    Define default property settings here. These settings drive what is available and how values are generated on the Generate tab.
-                  </p>
-                </div>
-                <button
-                  onClick={() => propertiesTabRef.current?.openAddModal?.()}
-                  className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition-colors"
-                >
-                  Add Property
-                </button>
-              </div>
-              <ProfilePropertiesTab ref={propertiesTabRef} headerRenderedByParent onPropertiesChange={fetchPropertiesCount} />
-            </div>
-          )}
+          {/* Properties configuration component is always mounted so its modal can be used from Generate tab. */}
+          <ProfilePropertiesTab
+            ref={propertiesTabRef}
+            headerRenderedByParent={tab === 'configure'}
+            onPropertiesChange={tab === 'configure' ? fetchPropertiesCount : undefined}
+            initialAction={searchParams.get('action')}
+            initialPropertyName={searchParams.get('property')}
+            embeddedForGenerate={tab !== 'configure'}
+            configureHeader={tab === 'configure' ? (
+              <>
+                <h2 className="text-xl font-semibold text-gray-900">Custom Properties ({propertiesCount})</h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  Define default property settings here. These settings drive what is available and how values are generated on the Generate tab.
+                </p>
+              </>
+            ) : null}
+          />
 
           {tab === 'generate' && (
             <div>
-              <GenerateProfilesTab />
+              <GenerateProfilesTab
+                onAddCustomProperty={() => propertiesTabRef.current?.openAddModal?.()}
+                onEditCustomProperty={(propertyName) =>
+                  propertiesTabRef.current?.openEditModal?.(propertyName)
+                }
+              />
             </div>
           )}
         </div>
