@@ -158,6 +158,34 @@ export default function EventsPageClient() {
   const serviceBusinessTypes = getBusinessTypesByTemplate('service')
   const subscriptionBusinessTypes = getBusinessTypesByTemplate('subscription')
 
+  const hasApiKey = !!getActiveApiKey()
+
+  if (!hasApiKey) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navigation activePage="events" />
+        <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+          <div className="px-4 py-6 sm:px-0">
+            <div className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50 px-6 py-8 text-center">
+              <h2 className="text-xl font-semibold text-gray-900">Connect a Klaviyo account to generate events</h2>
+              <p className="mt-2 text-sm text-gray-600 max-w-xl mx-auto">
+                Journeys and events are generated against a specific Klaviyo account. Add an account in Settings so we can send demo events to the right place.
+              </p>
+              <div className="mt-4">
+                <Link
+                  href="/settings"
+                  className="inline-flex items-center px-4 py-2 rounded-md bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700"
+                >
+                  Go to Settings
+                </Link>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    )
+  }
+
   const fullCatalog = buildFullCatalog(
     journeyType,
     catalogFromStorage,

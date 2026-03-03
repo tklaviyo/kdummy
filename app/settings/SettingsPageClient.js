@@ -169,7 +169,7 @@ export default function SettingsPageClient() {
             {activeTab === 'accounts' && (
               <>
                 {!showAddForm ? (
-                  <>
+                  <div className="w-full lg:w-1/2">
                     <div className="flex justify-between items-center mb-6">
                       <h2 className="text-lg font-semibold text-gray-900">Klaviyo Accounts</h2>
                       <button
@@ -235,7 +235,7 @@ export default function SettingsPageClient() {
                         ))}
                       </div>
                     )}
-                  </>
+                  </div>
                 ) : (
                   <div className="max-w-md">
                     <h2 className="text-lg font-semibold text-gray-900 mb-4">

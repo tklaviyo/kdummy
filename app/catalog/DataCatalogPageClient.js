@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Navigation from '@/components/Navigation'
+import Link from 'next/link'
+import { getActiveApiKey } from '@/lib/storage'
 import { fetchWithApiKey } from '@/lib/apiClient'
 import { createEmptyItem, getTemplate } from '@/src/catalog/schema.js'
 import { validateItem } from '@/src/catalog/validators.js'
@@ -23,6 +25,34 @@ export default function DataCatalogPageClient() {
       setActiveTab(tab)
     }
   }, [searchParams])
+
+  const hasApiKey = !!getActiveApiKey()
+
+  if (!hasApiKey) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navigation activePage="catalog" />
+        <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+          <div className="px-4 py-6 sm:px-0">
+            <div className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50 px-6 py-8 text-center">
+              <h2 className="text-xl font-semibold text-gray-900">Connect a Klaviyo account to use the Data Catalog</h2>
+              <p className="mt-2 text-sm text-gray-600 max-w-xl mx-auto">
+                Catalog items, locations, and loyalty programs are stored per Klaviyo account. Connect an account in Settings to start configuring the data that powers profiles and events.
+              </p>
+              <div className="mt-4">
+                <Link
+                  href="/settings"
+                  className="inline-flex items-center px-4 py-2 rounded-md bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700"
+                >
+                  Go to Settings
+                </Link>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">

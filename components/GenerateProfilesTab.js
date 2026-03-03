@@ -1164,11 +1164,12 @@ export default function GenerateProfilesTab({ onAddCustomProperty, onEditCustomP
           </h2>
           <p className="text-sm text-gray-500 mt-1 ml-11">Single or multiple profiles. Phone and location are determined by the selected country/countries and stay consistent per profile.</p>
         </div>
-        <div className="p-6 space-y-6">
-          {/* Row 1: Number of profiles — narrow cards (1/4 width each, ~half total); counter input larger, no native spinners */}
-          <div>
-            <h3 className="text-sm font-medium text-gray-700 mb-3">Number of profiles</h3>
-            <div className="flex gap-3 items-stretch max-w-[50%]">
+        <div className="p-6">
+          <div className="flex flex-col lg:flex-row gap-6">
+            {/* Left: Number of profiles */}
+            <div className="flex-1">
+              <h3 className="text-sm font-medium text-gray-700 mb-3">Number of profiles</h3>
+              <div className="flex gap-3 items-stretch max-w-[50%]">
               <button
                 type="button"
                 onClick={() => {
@@ -1281,84 +1282,85 @@ export default function GenerateProfilesTab({ onAddCustomProperty, onEditCustomP
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* Row 2: Countries on its own row */}
-          <div className="relative max-w-xs" id="country-dropdown-container">
-            <h3 className="text-sm font-medium text-gray-700 mb-2">Countries</h3>
-            <p className="text-xs text-gray-500 mb-2">Phone and address from selected country/countries. Each profile gets one country; for multiple, countries are distributed randomly.</p>
-            {profileModeSingle ? (
-              <select
-                value={selectedCountries[0] || ''}
-                onChange={(e) => setSelectedCountries(e.target.value ? [e.target.value] : ['US'])}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white"
-              >
-                {availableCountries.length === 0 ? (
-                  <option value="">Loading...</option>
-                ) : (
-                  availableCountries.map((country) => (
-                    <option key={country.code} value={country.code}>{country.name} ({country.code})</option>
-                  ))
-                )}
-              </select>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); setShowCountryDropdown(!showCountryDropdown) }}
-                  className="w-full px-3 py-2 text-left border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white flex justify-between items-center text-sm"
+            {/* Right: Countries */}
+            <div className="relative w-full lg:max-w-xs" id="country-dropdown-container">
+              <h3 className="text-sm font-medium text-gray-700 mb-2">Countries</h3>
+              <p className="text-xs text-gray-500 mb-2">Phone and address from selected country/countries. Each profile gets one country; for multiple, countries are distributed randomly.</p>
+              {profileModeSingle ? (
+                <select
+                  value={selectedCountries[0] || ''}
+                  onChange={(e) => setSelectedCountries(e.target.value ? [e.target.value] : ['US'])}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white"
                 >
-                  <span className="text-gray-700">
-                    {selectAllCountries ? `All countries (${availableCountries.length})` : selectedCountries.length > 0 ? `${selectedCountries.length} selected` : 'Select countries...'}
-                  </span>
-                  <svg className={`h-5 w-5 text-gray-400 shrink-0 ${showCountryDropdown ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                {showCountryDropdown && (
-                  <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-xl max-h-64 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-                    <div className="p-2 border-b border-gray-100 sticky top-0 bg-white">
-                      <label className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={selectAllCountries}
-                          onChange={(e) => {
-                            setSelectAllCountries(e.target.checked)
-                            if (e.target.checked) setSelectedCountries([])
-                            else setSelectedCountries(['US'])
-                          }}
-                          className="h-4 w-4 text-indigo-600 rounded border-gray-300"
-                        />
-                        <span className="ml-2 text-sm font-medium text-gray-900">Select all</span>
-                      </label>
-                    </div>
-                    <div className="p-2 max-h-52 overflow-y-auto">
-                      {availableCountries.map((country) => (
-                        <label key={country.code} className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                  {availableCountries.length === 0 ? (
+                    <option value="">Loading...</option>
+                  ) : (
+                    availableCountries.map((country) => (
+                      <option key={country.code} value={country.code}>{country.name} ({country.code})</option>
+                    ))
+                  )}
+                </select>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setShowCountryDropdown(!showCountryDropdown) }}
+                    className="w-full px-3 py-2 text-left border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white flex justify-between items-center text-sm"
+                  >
+                    <span className="text-gray-700">
+                      {selectAllCountries ? `All countries (${availableCountries.length})` : selectedCountries.length > 0 ? `${selectedCountries.length} selected` : 'Select countries...'}
+                    </span>
+                    <svg className={`h-5 w-5 text-gray-400 shrink-0 ${showCountryDropdown ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {showCountryDropdown && (
+                    <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-xl max-h-64 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                      <div className="p-2 border-b border-gray-100 sticky top-0 bg-white">
+                        <label className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
                           <input
                             type="checkbox"
-                            checked={selectAllCountries || selectedCountries.includes(country.code)}
+                            checked={selectAllCountries}
                             onChange={(e) => {
-                              if (selectAllCountries) return
-                              if (e.target.checked) setSelectedCountries([...selectedCountries, country.code])
-                              else setSelectedCountries(selectedCountries.filter((c) => c !== country.code))
+                              setSelectAllCountries(e.target.checked)
+                              if (e.target.checked) setSelectedCountries([])
+                              else setSelectedCountries(['US'])
                             }}
-                            disabled={selectAllCountries}
                             className="h-4 w-4 text-indigo-600 rounded border-gray-300"
                           />
-                          <span className="ml-2 text-sm text-gray-900">{country.name}</span>
-                          <span className="ml-1 text-xs text-gray-500">({country.code})</span>
+                          <span className="ml-2 text-sm font-medium text-gray-900">Select all</span>
                         </label>
-                      ))}
+                      </div>
+                      <div className="p-2 max-h-52 overflow-y-auto">
+                        {availableCountries.map((country) => (
+                          <label key={country.code} className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={selectAllCountries || selectedCountries.includes(country.code)}
+                              onChange={(e) => {
+                                if (selectAllCountries) return
+                                if (e.target.checked) setSelectedCountries([...selectedCountries, country.code])
+                                else setSelectedCountries(selectedCountries.filter((c) => c !== country.code))
+                              }}
+                              disabled={selectAllCountries}
+                              className="h-4 w-4 text-indigo-600 rounded border-gray-300"
+                            />
+                            <span className="ml-2 text-sm text-gray-900">{country.name}</span>
+                            <span className="ml-1 text-xs text-gray-500">({country.code})</span>
+                          </label>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
-                <p className="text-xs text-gray-500 mt-1">
-                  {selectAllCountries ? 'All countries' : `${selectedCountries.length} selected`}
-                  {!selectAllCountries && selectedCountries.length > 0 && ` · ${availableLocations.length} locations`}
-                </p>
-              </>
-            )}
+                  )}
+                  <p className="text-xs text-gray-500 mt-1">
+                    {selectAllCountries ? 'All countries' : `${selectedCountries.length} selected`}
+                    {!selectAllCountries && selectedCountries.length > 0 && ` · ${availableLocations.length} locations`}
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
           </div>
         </div>
       </div>
