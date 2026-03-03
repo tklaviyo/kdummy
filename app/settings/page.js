@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Navigation from '@/components/Navigation'
@@ -9,7 +9,7 @@ import { useConfirm } from '@/context/ConfirmContext'
 
 const SETTINGS_TABS = ['accounts', 'data']
 
-export default function SettingsPage() {
+function SettingsPageContent() {
   const searchParams = useSearchParams()
   const { alert, confirm } = useConfirm()
   const [activeTab, setActiveTab] = useState('accounts')
@@ -415,6 +415,14 @@ export default function SettingsPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-500">Loading...</div>}>
+      <SettingsPageContent />
+    </Suspense>
   )
 }
 

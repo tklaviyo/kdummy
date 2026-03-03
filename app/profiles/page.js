@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Navigation from '@/components/Navigation'
@@ -10,7 +10,7 @@ import { useConfirm } from '@/context/ConfirmContext'
 import { fetchWithApiKey } from '@/lib/apiClient'
 import { getActiveApiKey } from '@/lib/storage'
 
-export default function ProfilesPage() {
+function ProfilesPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { alert, confirm } = useConfirm()
@@ -439,5 +439,13 @@ export default function ProfilesPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function ProfilesPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-500">Loading...</div>}>
+      <ProfilesPageContent />
+    </Suspense>
   )
 }

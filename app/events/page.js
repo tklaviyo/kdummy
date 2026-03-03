@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Navigation from '@/components/Navigation'
@@ -85,7 +85,7 @@ function filterCatalogBySelectedIds(fullCatalog, selectedProductIds, selectedSer
   }
 }
 
-export default function EventsPage() {
+function EventsPageContent() {
   const [journeyType, setJourneyType] = useState('ecommerce_online')
   const [journeyVariant, setJourneyVariant] = useState('full')
   const [selectedEventNames, setSelectedEventNames] = useState([])
@@ -1628,5 +1628,13 @@ export default function EventsPage() {
         </div>
       </main>
     </div>
+  )
+}
+
+export default function EventsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-500">Loading...</div>}>
+      <EventsPageContent />
+    </Suspense>
   )
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Navigation from '@/components/Navigation'
 import { fetchWithApiKey } from '@/lib/apiClient'
@@ -13,7 +13,7 @@ import { useConfirm } from '@/context/ConfirmContext'
 
 const TEMPLATE_KEYS = ['product', 'service', 'subscription']
 
-export default function DataCatalogPage() {
+function DataCatalogPageContent() {
   const searchParams = useSearchParams()
   const [activeTab, setActiveTab] = useState('products')
 
@@ -93,6 +93,14 @@ export default function DataCatalogPage() {
         </div>
       </main>
     </div>
+  )
+}
+
+export default function DataCatalogPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-500">Loading...</div>}>
+      <DataCatalogPageContent />
+    </Suspense>
   )
 }
 
