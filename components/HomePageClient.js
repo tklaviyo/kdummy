@@ -24,7 +24,7 @@ export default function HomePageClient() {
           {/* Hero with logo */}
           <div className="text-center">
             <div className="inline-flex items-center justify-center gap-3 mb-4">
-              <img src="/logo.svg" alt="" className="h-14 w-14 rounded-xl object-contain" aria-hidden />
+              <img src="/kdummy-logo.png" alt="" className="h-14 w-14 rounded-xl object-contain" aria-hidden />
               <span className="text-4xl font-extrabold text-gray-900 sm:text-5xl tracking-tight">
                 K:Dummy
               </span>

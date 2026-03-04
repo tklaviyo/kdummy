@@ -69,7 +69,7 @@ export default function Navigation({ activePage = 'home' }) {
           <div className="flex">
             <div className="flex-shrink-0 flex items-center gap-2">
               <Link href="/" className="flex items-center gap-2">
-                <img src="/logo.svg" alt="K:Dummy" className="h-9 w-9 rounded-lg object-contain" />
+                <img src="/kdummy-logo.png" alt="K:Dummy" className="h-9 w-9 rounded-lg object-contain" />
                 <span className="text-2xl font-bold text-gray-900">K:Dummy</span>
               </Link>
             </div>
