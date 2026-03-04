@@ -1604,10 +1604,82 @@ export default function GenerateProfilesTab({ onAddCustomProperty, onEditCustomP
               <h3 className="text-sm font-medium text-gray-700">Include location</h3>
             </div>
             {includeLocation && (
-              count === 1 ? (
-                <div className="mt-4 space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <>
+                {count === 1 ? (
+                  <p className="text-xs text-gray-500 mb-3">
+                    Country and location determine address and locale. Pick a specific location or leave it blank to
+                    auto-generate from the selected country.
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-500 mb-3">
+                    For multiple profiles, each profile receives a random location from the selected country.
+                  </p>
+                )}
+
+                {count === 1 ? (
+                  <div className="mt-2 space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
+                        <select
+                          value={selectedCountries[0] || ''}
+                          onChange={(e) => setSelectedCountries(e.target.value ? [e.target.value] : ['US'])}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                        >
+                          {availableCountries.length === 0 ? (
+                            <option value="">Loading...</option>
+                          ) : (
+                            availableCountries.map((country) => (
+                              <option key={country.code} value={country.code}>{country.name} ({country.code})</option>
+                            ))
+                          )}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Pick a location (optional)</label>
+                        <select
+                          value={selectedLocationId}
+                          onChange={(e) => setSelectedLocationId(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                        >
+                          <option value="">Auto-generate from selected country</option>
+                          {availableLocations.map((loc) => (
+                            <option key={loc.id} value={loc.id}>{loc.city}, {loc.state || loc.region}, {loc.country}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
                     <div>
+                      <p className="text-xs text-gray-500 mb-2">
+                        Address fields are filled from the chosen location or can be edited manually. Leave location
+                        blank to generate an address from the selected country.
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {[
+                          { label: 'Address', value: locationAddress, set: setLocationAddress, placeholder: 'Street' },
+                          { label: 'City', value: locationCity, set: setLocationCity, placeholder: 'City' },
+                          { label: 'Region / State', value: locationRegion, set: setLocationRegion, placeholder: 'State' },
+                          { label: 'Country', value: locationCountry, set: setLocationCountry, placeholder: 'Country' },
+                          { label: 'Zip', value: locationZip, set: setLocationZip, placeholder: 'Zip' },
+                          { label: 'Locale', value: locale, set: setLocale, placeholder: 'en-US' },
+                        ].map(({ label, value, set, placeholder }) => (
+                          <div key={label}>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+                            <input
+                              type="text"
+                              value={value}
+                              onChange={(e) => set(e.target.value)}
+                              placeholder={placeholder}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-2 space-y-3">
+                    <div className="max-w-xs">
                       <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
                       <select
                         value={selectedCountries[0] || ''}
@@ -1623,61 +1695,9 @@ export default function GenerateProfilesTab({ onAddCustomProperty, onEditCustomP
                         )}
                       </select>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Pick a location (optional)</label>
-                      <select
-                        value={selectedLocationId}
-                        onChange={(e) => setSelectedLocationId(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
-                      >
-                        <option value="">Auto-generate from selected country</option>
-                        {availableLocations.map((loc) => (
-                          <option key={loc.id} value={loc.id}>{loc.city}, {loc.state || loc.region}, {loc.country}</option>
-                        ))}
-                      </select>
-                    </div>
                   </div>
-                  <p className="text-xs text-gray-500">Choose a city/region to use for this profile, or leave location blank to auto-generate. The address fields below are filled when you pick a location; you can also edit them manually.</p>
-                  <div>
-                    <p className="text-xs text-gray-500 mb-2">Address fields are filled from the chosen location or can be edited manually. Leave location blank to generate an address from the selected country.</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {[
-                      { label: 'Address', value: locationAddress, set: setLocationAddress, placeholder: 'Street' },
-                      { label: 'City', value: locationCity, set: setLocationCity, placeholder: 'City' },
-                      { label: 'Region / State', value: locationRegion, set: setLocationRegion, placeholder: 'State' },
-                      { label: 'Country', value: locationCountry, set: setLocationCountry, placeholder: 'Country' },
-                      { label: 'Zip', value: locationZip, set: setLocationZip, placeholder: 'Zip' },
-                      { label: 'Locale', value: locale, set: setLocale, placeholder: 'en-US' },
-                    ].map(({ label, value, set, placeholder }) => (
-                      <div key={label}>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-                        <input type="text" value={value} onChange={(e) => set(e.target.value)} placeholder={placeholder} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500" />
-                      </div>
-                    ))}
-                  </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-4 space-y-3">
-                  <div className="max-w-xs">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
-                    <select
-                      value={selectedCountries[0] || ''}
-                      onChange={(e) => setSelectedCountries(e.target.value ? [e.target.value] : ['US'])}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white"
-                    >
-                      {availableCountries.length === 0 ? (
-                        <option value="">Loading...</option>
-                      ) : (
-                        availableCountries.map((country) => (
-                          <option key={country.code} value={country.code}>{country.name} ({country.code})</option>
-                        ))
-                      )}
-                    </select>
-                  </div>
-                  <p className="text-sm text-gray-500">Each profile gets a random location from the selected country for variety.</p>
-                </div>
-              )
+                )}
+              </>
             )}
           </div>
         </div>

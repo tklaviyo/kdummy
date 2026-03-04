@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">K:Dummy logo</title>
+  <desc id="desc">Simplified helmet silhouette with dark visor</desc>
+
+  <!-- Helmet shell (outer shape, no background circle) -->
+  <path
+    d="M18 42
+       v-9
+       c0-9.5 5.5-17 14-17
+       s14 7.5 14 17
+       v9
+       c0 2.5-1.7 4.3-4.2 4.6
+       l-19.6 0
+       C19.7 46.3 18 44.5 18 42z"
+    fill="#facc15"
+  />
+
+  <!-- Dark visor -->
+  <path
+    d="M21.5 28
+       c1.8-4.5 5.2-7 10.5-7
+       s8.7 2.5 10.5 7
+       c0.7 1.7 1 3.4 1 5.3
+       v5.2
+       c0 2-1.6 3.6-3.6 3.6
+       h-15.8
+       c-2 0-3.6-1.6-3.6-3.6
+       v-5.2
+       c0-1.9 0.3-3.6 1-5.3z"
+    fill="#020617"
+  />
+
+  <!-- Visor highlight -->
+  <path
+    d="M24.5 30.5
+       c1.4-2.6 3.7-4.1 6.6-4.3
+       l4.8-0.2
+       c2.5 0.2 4.3 1.1 5.7 3"
+    fill="none"
+    stroke="#4b5563"
+    stroke-width="1.6"
+    stroke-linecap="round"
+  />
+
+  <!-- Side modules -->
+  <rect x="17" y="30" width="3.8" height="9" rx="1.6" fill="#facc15" />
+  <rect x="43.2" y="30" width="3.8" height="9" rx="1.6" fill="#facc15" />
+
+  <!-- Small neck / base -->
+  <path
+    d="M24 43.5
+       h16
+       c0 2.4-1.9 4.3-4.3 4.3
+       h-7.4
+       C25.9 47.8 24 45.9 24 43.5z"
+    fill="#0f172a"
+  />
+</svg>
+
