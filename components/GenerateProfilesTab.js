@@ -644,10 +644,16 @@ export default function GenerateProfilesTab({ onAddCustomProperty, onEditCustomP
       }
 
       if (createdProfiles.length > 0) {
-        await alert(`Successfully created ${createdProfiles.length} profile(s)${errors.length > 0 ? `\n${errors.length} error(s) occurred` : ''}`)
+        const errorSummary = errors.length > 0
+          ? `\n\n${errors.length} error(s):\n${errors.slice(0, 5).map(e => `• Profile ${e.index}: ${e.error}`).join('\n')}${errors.length > 5 ? `\n... and ${errors.length - 5} more` : ''}`
+          : ''
+        await alert(`Successfully created ${createdProfiles.length} profile(s).${errors.length > 0 ? `\n${errors.length} error(s) occurred (e.g. subscribe failed).${errorSummary}` : ''}`)
         router.push('/profiles?tab=list')
       } else {
-        await alert(`Failed to create profiles. Errors: ${errors.map(e => `\nProfile ${e.index}: ${e.error}`).join('')}`)
+        const errorList = errors.length > 0
+          ? errors.map(e => `Profile ${e.index}: ${e.error}`).join('\n')
+          : 'Unknown error'
+        await alert(`Failed to create profiles.\n\n${errorList}`)
       }
     } catch (error) {
       await alert(`Error: ${error.message}`)

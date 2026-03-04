@@ -337,7 +337,7 @@ function SettingsAccountModal({ isOpen, onClose, onSave, editingKey, formData, s
               type="text"
               value={formData.accountName}
               onChange={(e) => setFormData({ ...formData, accountName: e.target.value })}
-              placeholder="e.g. Demo store, Client A"
+              placeholder="Dummy Store"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
             />
           </div>
@@ -347,7 +347,7 @@ function SettingsAccountModal({ isOpen, onClose, onSave, editingKey, formData, s
               type="text"
               value={formData.apiKey}
               onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
-              placeholder="PK_..."
+              placeholder="PUB123"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
               disabled={!!editingKey}
             />
@@ -366,9 +366,12 @@ function SettingsAccountModal({ isOpen, onClose, onSave, editingKey, formData, s
               type="text"
               value={formData.listId}
               onChange={(e) => setFormData({ ...formData, listId: e.target.value })}
-              placeholder="Required for Subscribe API (email, SMS, WhatsApp)"
+              placeholder="LIST123"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
             />
+            <p className="mt-1 text-xs text-gray-500">
+              Required to subscribe profiles to email, SMS, or marketing consent when generating profiles. Add a List ID if you use consent options.
+            </p>
           </div>
         </div>
         <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">

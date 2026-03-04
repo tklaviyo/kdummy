@@ -138,8 +138,12 @@ export async function POST(request) {
 
     if (!ok) {
       const errors = klaviyoResponse?.errors || [{ detail: klaviyoResponse?.detail || klaviyoResponse?.message || 'Klaviyo API error' }]
+      const detail = Array.isArray(errors) ? errors[0]?.detail || errors[0]?.title : errors?.detail
+      const message = (status === 401 || status === 403)
+        ? 'Invalid or unauthorized API key. Check your public API key in Settings.'
+        : (detail || 'Klaviyo API error')
       return NextResponse.json(
-        { errors: Array.isArray(errors) ? errors : [errors] },
+        { errors: [{ detail: message }] },
         { status: status >= 400 && status < 600 ? status : 502, headers: { 'Content-Type': 'application/vnd.api+json' } }
       )
     }
