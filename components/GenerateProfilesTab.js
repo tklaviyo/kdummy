@@ -44,12 +44,10 @@ export default function GenerateProfilesTab({ onAddCustomProperty, onEditCustomP
   const [locale, setLocale] = useState('')
   const [includeLocation, setIncludeLocation] = useState(true)
   const [selectedCountries, setSelectedCountries] = useState(['US'])
-  const [selectAllCountries, setSelectAllCountries] = useState(false)
   const [subscribeChannels, setSubscribeChannels] = useState([])
   
   const [availableLocations, setAvailableLocations] = useState([])
   const [availableCountries, setAvailableCountries] = useState([])
-  const [showCountryDropdown, setShowCountryDropdown] = useState(false)
   const [openMultiSelects, setOpenMultiSelects] = useState({})
   const [activePropertyGroupId, setActivePropertyGroupId] = useState('all')
 
@@ -61,9 +59,6 @@ export default function GenerateProfilesTab({ onAddCustomProperty, onEditCustomP
 
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (!event.target.closest('#country-dropdown-container')) {
-        setShowCountryDropdown(false)
-      }
       if (!event.target.closest('[data-multiselect]')) {
         setOpenMultiSelects({})
       }
@@ -73,7 +68,7 @@ export default function GenerateProfilesTab({ onAddCustomProperty, onEditCustomP
     return () => {
       document.removeEventListener('click', handleClickOutside)
     }
-  }, [showCountryDropdown])
+  }, [])
 
   useEffect(() => {
     if (selectedLocationId) {
@@ -95,24 +90,19 @@ export default function GenerateProfilesTab({ onAddCustomProperty, onEditCustomP
 
   useEffect(() => {
     if (availableCountries.length > 0) {
-      let countriesToUse = []
-      if (selectAllCountries || selectedCountries.length === 0) {
-        countriesToUse = availableCountries
-      } else {
-        countriesToUse = availableCountries.filter(c => selectedCountries.includes(c.code))
-      }
+      const countriesToUse = selectedCountries.length > 0
+        ? availableCountries.filter(c => selectedCountries.includes(c.code))
+        : [availableCountries.find(c => c.code === 'US') || availableCountries[0]].filter(Boolean)
       if (countriesToUse.length > 0) {
-        const filtered = getLocationsForCountries(countriesToUse)
-        setAvailableLocations(filtered)
+        setAvailableLocations(getLocationsForCountries(countriesToUse))
       } else {
         setAvailableLocations([])
       }
     }
-  }, [selectedCountries, availableCountries, selectAllCountries])
+  }, [selectedCountries, availableCountries])
 
   useEffect(() => {
     if (profileModeSingle) {
-      if (selectedCountries.length > 1) setSelectedCountries([selectedCountries[0]])
       if (count !== 1) setCount(1)
     }
   }, [profileModeSingle])
@@ -120,6 +110,11 @@ export default function GenerateProfilesTab({ onAddCustomProperty, onEditCustomP
   // Phone cannot be used when generating multiple profiles; uncheck when switching to multiple
   useEffect(() => {
     if (count > 1) setIncludePhone(false)
+  }, [count])
+
+  // Clear picked location when switching to multiple (multiple uses random location per profile)
+  useEffect(() => {
+    if (count > 1) setSelectedLocationId('')
   }, [count])
 
   useEffect(() => {
@@ -483,12 +478,9 @@ export default function GenerateProfilesTab({ onAddCustomProperty, onEditCustomP
           }
         }
       } else {
-        let countriesToUse = []
-        if (selectAllCountries || selectedCountries.length === 0) {
-          countriesToUse = availableCountries
-        } else {
-          countriesToUse = availableCountries.filter(c => selectedCountries.includes(c.code))
-        }
+        const countriesToUse = selectedCountries.length > 0
+          ? availableCountries.filter(c => selectedCountries.includes(c.code))
+          : [availableCountries.find(c => c.code === 'US') || availableCountries[0]].filter(Boolean)
         
         if (countriesToUse.length > 0) {
           location = getRandomLocationFromCountries(countriesToUse)
@@ -1155,21 +1147,19 @@ export default function GenerateProfilesTab({ onAddCustomProperty, onEditCustomP
 
   return (
     <div className="space-y-6">
-      {/* 1. Profile count + Countries — two columns: profiles (cards + count) | countries */}
+      {/* 1. Profile count */}
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-visible">
         <div className="bg-gradient-to-r from-indigo-50 to-white px-6 py-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900">
             <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white text-sm font-bold mr-3">1</span>
-            Profile count & countries
+            Profile count
           </h2>
-          <p className="text-sm text-gray-500 mt-1 ml-11">Single or multiple profiles. Phone and location are determined by the selected country/countries and stay consistent per profile.</p>
+          <p className="text-sm text-gray-500 mt-1 ml-11">Single profile or multiple (2–100). Country and location are set in Name &amp; location below.</p>
         </div>
         <div className="p-6">
-          <div className="flex flex-col lg:flex-row gap-6">
-            {/* Left: Number of profiles */}
-            <div className="flex-1">
-              <h3 className="text-sm font-medium text-gray-700 mb-3">Number of profiles</h3>
-              <div className="flex gap-3 items-stretch max-w-[50%]">
+          <div className="max-w-xl">
+            <h3 className="text-sm font-medium text-gray-700 mb-3">Number of profiles</h3>
+            <div className="flex gap-3 items-stretch w-full">
               <button
                 type="button"
                 onClick={() => {
@@ -1282,85 +1272,6 @@ export default function GenerateProfilesTab({ onAddCustomProperty, onEditCustomP
                 </div>
               </div>
             </div>
-
-            {/* Right: Countries */}
-            <div className="relative w-full lg:max-w-xs" id="country-dropdown-container">
-              <h3 className="text-sm font-medium text-gray-700 mb-2">Countries</h3>
-              <p className="text-xs text-gray-500 mb-2">Phone and address from selected country/countries. Each profile gets one country; for multiple, countries are distributed randomly.</p>
-              {profileModeSingle ? (
-                <select
-                  value={selectedCountries[0] || ''}
-                  onChange={(e) => setSelectedCountries(e.target.value ? [e.target.value] : ['US'])}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white"
-                >
-                  {availableCountries.length === 0 ? (
-                    <option value="">Loading...</option>
-                  ) : (
-                    availableCountries.map((country) => (
-                      <option key={country.code} value={country.code}>{country.name} ({country.code})</option>
-                    ))
-                  )}
-                </select>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setShowCountryDropdown(!showCountryDropdown) }}
-                    className="w-full px-3 py-2 text-left border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white flex justify-between items-center text-sm"
-                  >
-                    <span className="text-gray-700">
-                      {selectAllCountries ? `All countries (${availableCountries.length})` : selectedCountries.length > 0 ? `${selectedCountries.length} selected` : 'Select countries...'}
-                    </span>
-                    <svg className={`h-5 w-5 text-gray-400 shrink-0 ${showCountryDropdown ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                  {showCountryDropdown && (
-                    <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-xl max-h-64 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-                      <div className="p-2 border-b border-gray-100 sticky top-0 bg-white">
-                        <label className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={selectAllCountries}
-                            onChange={(e) => {
-                              setSelectAllCountries(e.target.checked)
-                              if (e.target.checked) setSelectedCountries([])
-                              else setSelectedCountries(['US'])
-                            }}
-                            className="h-4 w-4 text-indigo-600 rounded border-gray-300"
-                          />
-                          <span className="ml-2 text-sm font-medium text-gray-900">Select all</span>
-                        </label>
-                      </div>
-                      <div className="p-2 max-h-52 overflow-y-auto">
-                        {availableCountries.map((country) => (
-                          <label key={country.code} className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={selectAllCountries || selectedCountries.includes(country.code)}
-                              onChange={(e) => {
-                                if (selectAllCountries) return
-                                if (e.target.checked) setSelectedCountries([...selectedCountries, country.code])
-                                else setSelectedCountries(selectedCountries.filter((c) => c !== country.code))
-                              }}
-                              disabled={selectAllCountries}
-                              className="h-4 w-4 text-indigo-600 rounded border-gray-300"
-                            />
-                            <span className="ml-2 text-sm text-gray-900">{country.name}</span>
-                            <span className="ml-1 text-xs text-gray-500">({country.code})</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <p className="text-xs text-gray-500 mt-1">
-                    {selectAllCountries ? 'All countries' : `${selectedCountries.length} selected`}
-                    {!selectAllCountries && selectedCountries.length > 0 && ` · ${availableLocations.length} locations`}
-                  </p>
-                </>
-              )}
-            </div>
-          </div>
           </div>
         </div>
       </div>
@@ -1647,7 +1558,7 @@ export default function GenerateProfilesTab({ onAddCustomProperty, onEditCustomP
             <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white text-sm font-bold mr-3">3</span>
             Name & location
           </h2>
-          <p className="text-sm text-gray-500 mt-1 ml-11">Optional. Single profile can use a specific location from the country selected in step 1.</p>
+          <p className="text-sm text-gray-500 mt-1 ml-11">Optional. Choose a country; for a single profile you can pick a specific location or leave it to auto-generate. For multiple profiles, each gets a random location from the selected country.</p>
         </div>
         <div className="p-6 space-y-6">
           <div>
@@ -1695,20 +1606,41 @@ export default function GenerateProfilesTab({ onAddCustomProperty, onEditCustomP
             {includeLocation && (
               count === 1 ? (
                 <div className="mt-4 space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Pick a location (leave blank to auto generate)</label>
-                    <select
-                      value={selectedLocationId}
-                      onChange={(e) => setSelectedLocationId(e.target.value)}
-                      className="w-full max-w-md px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
-                    >
-                      <option value="">Auto from selected countries</option>
-                      {availableLocations.map((loc) => (
-                        <option key={loc.id} value={loc.id}>{loc.city}, {loc.state || loc.region}, {loc.country}</option>
-                      ))}
-                    </select>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
+                      <select
+                        value={selectedCountries[0] || ''}
+                        onChange={(e) => setSelectedCountries(e.target.value ? [e.target.value] : ['US'])}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                      >
+                        {availableCountries.length === 0 ? (
+                          <option value="">Loading...</option>
+                        ) : (
+                          availableCountries.map((country) => (
+                            <option key={country.code} value={country.code}>{country.name} ({country.code})</option>
+                          ))
+                        )}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Pick a location (optional)</label>
+                      <select
+                        value={selectedLocationId}
+                        onChange={(e) => setSelectedLocationId(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                      >
+                        <option value="">Auto-generate from selected country</option>
+                        {availableLocations.map((loc) => (
+                          <option key={loc.id} value={loc.id}>{loc.city}, {loc.state || loc.region}, {loc.country}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <p className="text-xs text-gray-500">Choose a city/region to use for this profile, or leave location blank to auto-generate. The address fields below are filled when you pick a location; you can also edit them manually.</p>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-2">Address fields are filled from the chosen location or can be edited manually. Leave location blank to generate an address from the selected country.</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {[
                       { label: 'Address', value: locationAddress, set: setLocationAddress, placeholder: 'Street' },
                       { label: 'City', value: locationCity, set: setLocationCity, placeholder: 'City' },
@@ -1723,8 +1655,29 @@ export default function GenerateProfilesTab({ onAddCustomProperty, onEditCustomP
                       </div>
                     ))}
                   </div>
+                  </div>
                 </div>
-              ) : null
+              ) : (
+                <div className="mt-4 space-y-3">
+                  <div className="max-w-xs">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
+                    <select
+                      value={selectedCountries[0] || ''}
+                      onChange={(e) => setSelectedCountries(e.target.value ? [e.target.value] : ['US'])}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                    >
+                      {availableCountries.length === 0 ? (
+                        <option value="">Loading...</option>
+                      ) : (
+                        availableCountries.map((country) => (
+                          <option key={country.code} value={country.code}>{country.name} ({country.code})</option>
+                        ))
+                      )}
+                    </select>
+                  </div>
+                  <p className="text-sm text-gray-500">Each profile gets a random location from the selected country for variety.</p>
+                </div>
+              )
             )}
           </div>
         </div>

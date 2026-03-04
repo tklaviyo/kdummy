@@ -21,38 +21,8 @@ export default function ProfilesPageClient() {
   const [propertiesCount, setPropertiesCount] = useState(0)
   const [selectedProfileIds, setSelectedProfileIds] = useState(new Set())
   const [deleting, setDeleting] = useState(false)
-  const [hasApiKey, setHasApiKey] = useState(null) // null until after mount to avoid hydration mismatch
+  const [hasApiKey, setHasApiKey] = useState(null)
   const propertiesTabRef = useRef(null)
-
-  useEffect(() => {
-    setHasApiKey(!!getActiveApiKey())
-  }, [])
-
-  if (hasApiKey === false) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <Navigation activePage="profiles" />
-        <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-          <div className="px-4 py-6 sm:px-0">
-            <div className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50 px-6 py-8 text-center">
-              <h2 className="text-xl font-semibold text-gray-900">Connect a Klaviyo account to get started</h2>
-              <p className="mt-2 text-sm text-gray-600 max-w-xl mx-auto">
-                Profiles are stored per Klaviyo account. Add your first account in Settings so we know where to send generated data.
-              </p>
-              <div className="mt-4">
-                <Link
-                  href="/settings"
-                  className="inline-flex items-center px-4 py-2 rounded-md bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700"
-                >
-                  Go to Settings
-                </Link>
-              </div>
-            </div>
-          </div>
-        </main>
-      </div>
-    )
-  }
 
   useEffect(() => {
     if (tab === 'list') {
@@ -61,6 +31,10 @@ export default function ProfilesPageClient() {
       fetchPropertiesCount()
     }
   }, [tab])
+
+  useEffect(() => {
+    setHasApiKey(!!getActiveApiKey())
+  }, [])
 
   const fetchPropertiesCount = async () => {
     try {
@@ -156,6 +130,32 @@ export default function ProfilesPageClient() {
 
   const handleViewDetails = (profile) => {
     setSelectedProfile(profile)
+  }
+
+  if (!hasApiKey) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navigation activePage="profiles" />
+        <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+          <div className="px-4 py-6 sm:px-0">
+            <div className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50 px-6 py-8 text-center">
+              <h2 className="text-xl font-semibold text-gray-900">Connect a Klaviyo account to generate profiles</h2>
+              <p className="mt-2 text-sm text-gray-600 max-w-xl mx-auto">
+                Profiles are stored per Klaviyo account. Add your first account in Settings so we know where to send generated profiles.
+              </p>
+              <div className="mt-4">
+                <Link
+                  href="/settings"
+                  className="inline-flex items-center px-4 py-2 rounded-md bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700"
+                >
+                  Go to Settings
+                </Link>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    )
   }
 
   const handleTabChange = (newTab) => {

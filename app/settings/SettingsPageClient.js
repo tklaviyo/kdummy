@@ -168,135 +168,100 @@ export default function SettingsPageClient() {
 
             {activeTab === 'accounts' && (
               <>
-                {!showAddForm ? (
-                  <div className="w-full lg:w-1/2">
-                    <div className="flex justify-between items-center mb-6">
-                      <h2 className="text-lg font-semibold text-gray-900">Klaviyo Accounts</h2>
-                      <button
-                        onClick={() => setShowAddForm(true)}
-                        className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      >
-                        Add Account
-                      </button>
-                    </div>
-                    {accounts.length === 0 ? (
-                      <div className="text-center py-12">
-                        <p className="text-gray-500">No accounts configured</p>
+                <div className="w-full">
+                  <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-lg font-semibold text-gray-900">Klaviyo Accounts</h2>
+                  </div>
+                  {accounts.length === 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowAddForm(true)}
+                      className="w-full sm:w-1/2 text-left rounded-xl border-2 border-dashed border-indigo-200 bg-indigo-50 px-6 py-6 hover:bg-indigo-100 hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="inline-flex items-center justify-center h-8 w-8 rounded-md bg-white text-indigo-600 border border-indigo-200">
+                          <span className="text-base leading-none">+</span>
+                        </div>
+                        <div>
+                          <h3 className="text-base font-semibold text-gray-900">Connect a Klaviyo account</h3>
+                          <p className="mt-1 text-sm text-gray-600 max-w-md">
+                            Add your first Klaviyo account so profiles, events, and catalog data know where to go.
+                          </p>
+                        </div>
                       </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {accounts.map((account) => (
-                          <div
-                            key={account.apiKey}
-                            className={`border rounded-lg p-4 ${
-                              activeApiKey === account.apiKey
-                                ? 'border-indigo-500 bg-indigo-50'
-                                : 'border-gray-200 bg-white'
-                            }`}
-                          >
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-3 mb-2">
-                                  <h3 className="text-lg font-semibold text-gray-900">{account.accountName}</h3>
-                                  {activeApiKey === account.apiKey && (
-                                    <span className="px-2 py-1 text-xs font-medium bg-indigo-600 text-white rounded">Active</span>
-                                  )}
-                                </div>
-                                <p className="text-sm text-gray-600 font-mono mb-2">{account.apiKey}</p>
-                                {account.listId && (
-                                  <p className="text-xs text-gray-600 font-mono mb-1">List ID: {account.listId}</p>
+                    </button>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Add account tile */}
+                      <button
+                        type="button"
+                        onClick={() => setShowAddForm(true)}
+                        className="w-full text-left rounded-xl border-2 border-dashed border-indigo-200 bg-indigo-50 px-4 py-4 hover:bg-indigo-100 hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition flex flex-col justify-between"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="inline-flex items-center justify-center h-8 w-8 rounded-md bg-white text-indigo-600 border border-indigo-200">
+                            <span className="text-base leading-none">+</span>
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-semibold text-gray-900">Add another account</h3>
+                            <p className="mt-1 text-xs text-gray-600 max-w-md">
+                              Connect additional Klaviyo accounts to keep demo data separate.
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+
+                      {accounts.map((account) => (
+                        <div
+                          key={account.apiKey}
+                          className={`border rounded-lg p-4 ${
+                            activeApiKey === account.apiKey
+                              ? 'border-indigo-500 bg-indigo-50'
+                              : 'border-gray-200 bg-white'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-2">
+                                <h3 className="text-lg font-semibold text-gray-900">{account.accountName}</h3>
+                                {activeApiKey === account.apiKey && (
+                                  <span className="px-2 py-1 text-xs font-medium bg-indigo-600 text-white rounded">Active</span>
                                 )}
-                                <p className="text-xs text-gray-500">Added: {new Date(account.createdAt).toLocaleDateString()}</p>
                               </div>
-                              <div className="flex items-center gap-2">
-                                {activeApiKey !== account.apiKey && (
-                                  <button
-                                    onClick={() => handleSetActive(account.apiKey)}
-                                    className="px-3 py-1 text-sm text-indigo-600 hover:text-indigo-700 border border-indigo-600 rounded-md hover:bg-indigo-50"
-                                  >
-                                    Set Active
-                                  </button>
-                                )}
+                              <p className="text-sm text-gray-600 font-mono mb-2">{account.apiKey}</p>
+                              {account.listId && (
+                                <p className="text-xs text-gray-600 font-mono mb-1">List ID: {account.listId}</p>
+                              )}
+                              <p className="text-xs text-gray-500">Added: {new Date(account.createdAt).toLocaleDateString()}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {activeApiKey !== account.apiKey && (
                                 <button
-                                  onClick={() => handleEditAccount(account)}
-                                  className="px-3 py-1 text-sm text-gray-700 hover:text-gray-900 border border-gray-300 rounded-md hover:bg-gray-50"
+                                  onClick={() => handleSetActive(account.apiKey)}
+                                  className="px-3 py-1 text-sm text-indigo-600 hover:text-indigo-700 border border-indigo-600 rounded-md hover:bg-indigo-50"
                                 >
-                                  Edit
+                                  Set Active
                                 </button>
-                                <button
-                                  onClick={() => handleDeleteAccount(account.apiKey)}
-                                  className="px-3 py-1 text-sm text-red-600 hover:text-red-700 border border-red-300 rounded-md hover:bg-red-50"
-                                >
-                                  Delete
-                                </button>
-                              </div>
+                              )}
+                              <button
+                                onClick={() => handleEditAccount(account)}
+                                className="px-3 py-1 text-sm text-gray-700 hover:text-gray-900 border border-gray-300 rounded-md hover:bg-gray-50"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => handleDeleteAccount(account.apiKey)}
+                                className="px-3 py-1 text-sm text-red-600 hover:text-red-700 border border-red-300 rounded-md hover:bg-red-50"
+                              >
+                                Delete
+                              </button>
                             </div>
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="max-w-md">
-                    <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                      {editingKey ? 'Edit Account' : 'Add New Account'}
-                    </h2>
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Account Name</label>
-                        <input
-                          type="text"
-                          value={formData.accountName}
-                          onChange={(e) => setFormData({ ...formData, accountName: e.target.value })}
-                          placeholder="e.g., Production, Staging, Demo"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Public API Key</label>
-                        <input
-                          type="text"
-                          value={formData.apiKey}
-                          onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
-                          placeholder="pk_..."
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
-                          disabled={!!editingKey}
-                        />
-                        <p className="mt-1 text-xs text-gray-500">
-                          Use your Klaviyo public/company API key. Generated profiles are sent to your Klaviyo account.
-                        </p>
-                        {editingKey && (
-                          <p className="mt-1 text-xs text-gray-500">API key cannot be changed. Delete and recreate to change it.</p>
-                        )}
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">List ID</label>
-                        <input
-                          type="text"
-                          value={formData.listId}
-                          onChange={(e) => setFormData({ ...formData, listId: e.target.value })}
-                          placeholder="e.g. ABC123 (required for Subscribe API)"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
-                        />
-                        <p className="mt-1 text-xs text-gray-500">Required for Subscribe API (email, SMS, WhatsApp).</p>
-                      </div>
-                      <div className="flex gap-3">
-                        <button
-                          onClick={editingKey ? handleUpdateAccount : handleAddAccount}
-                          className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        >
-                          {editingKey ? 'Update' : 'Add'} Account
-                        </button>
-                        <button
-                          onClick={handleCancel}
-                          className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        >
-                          Cancel
-                        </button>
-                      </div>
+                        </div>
+                      ))}
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </>
             )}
 
@@ -328,6 +293,99 @@ export default function SettingsPageClient() {
               </div>
             )}
           </div>
+        </div>
+      </div>
+
+      <SettingsAccountModal
+        isOpen={showAddForm}
+        onClose={handleCancel}
+        onSave={editingKey ? handleUpdateAccount : handleAddAccount}
+        editingKey={editingKey}
+        formData={formData}
+        setFormData={setFormData}
+        activeApiKey={activeApiKey}
+      />
+    </div>
+  )
+}
+
+function SettingsAccountModal({ isOpen, onClose, onSave, editingKey, formData, setFormData, activeApiKey }) {
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">
+            {editingKey ? 'Edit Klaviyo account' : 'Add Klaviyo account'}
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600"
+          >
+            <span className="sr-only">Close</span>
+            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M6 6l8 8M6 14L14 6" />
+            </svg>
+          </button>
+        </div>
+        <div className="px-6 py-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Account name</label>
+            <input
+              type="text"
+              value={formData.accountName}
+              onChange={(e) => setFormData({ ...formData, accountName: e.target.value })}
+              placeholder="e.g. Demo store, Client A"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Public API key</label>
+            <input
+              type="text"
+              value={formData.apiKey}
+              onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
+              placeholder="pk_..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+              disabled={!!editingKey}
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Use your Klaviyo public/company API key. Generated data is stored per account.
+            </p>
+            {editingKey && (
+              <p className="mt-1 text-xs text-gray-500">
+                API key cannot be changed. Delete and recreate to switch to a new key.
+              </p>
+            )}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">List ID (optional)</label>
+            <input
+              type="text"
+              value={formData.listId}
+              onChange={(e) => setFormData({ ...formData, listId: e.target.value })}
+              placeholder="Required for Subscribe API (email, SMS, WhatsApp)"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+            />
+          </div>
+        </div>
+        <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onSave}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            {editingKey ? 'Update account' : 'Add account'}
+          </button>
         </div>
       </div>
     </div>

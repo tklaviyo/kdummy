@@ -18,6 +18,7 @@ const TEMPLATE_KEYS = ['product', 'service', 'subscription']
 export default function DataCatalogPageClient() {
   const searchParams = useSearchParams()
   const [activeTab, setActiveTab] = useState('products')
+  const [hasApiKey, setHasApiKey] = useState(null)
 
   useEffect(() => {
     const tab = searchParams.get('tab')
@@ -26,7 +27,9 @@ export default function DataCatalogPageClient() {
     }
   }, [searchParams])
 
-  const hasApiKey = !!getActiveApiKey()
+  useEffect(() => {
+    setHasApiKey(!!getActiveApiKey())
+  }, [])
 
   if (!hasApiKey) {
     return (
